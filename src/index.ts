@@ -214,7 +214,7 @@ function filenameToKeywords(filename: string): string {
 async function displaySearchResults(
   searchResults: AudibleSearchResponse,
 ): Promise<string | null> {
-  console.log(`Found ${searchResults.total_results} results.`);
+  console.log(`\nFound ${searchResults.total_results} results.`);
   console.log("----------------------------------------");
 
   if (!searchResults.products || searchResults.products.length === 0) {
@@ -296,9 +296,11 @@ function displayProductDetail(
  * @param imageUrl The URL of the image to fetch
  * @returns Promise containing the image as a Uint8Array
  */
-async function getImageUint8ArrayFromUrl(
-  imageUrl: string,
-): Promise<{ imageBuffer: Uint8Array; mime: string }> {
+async function getImageFromUrl(imageUrl: string): Promise<{
+  imageBuffer: Uint8Array;
+  mime: string;
+  type: { id: number; name: string };
+}> {
   try {
     // Set responseType to 'arraybuffer' to get binary data
     const response = await axios.get(imageUrl, {
@@ -316,6 +318,7 @@ async function getImageUint8ArrayFromUrl(
     return {
       imageBuffer: out,
       mime: response.headers["content-type"] || "bin",
+      type: { id: 3, name: "front cover" },
     };
   } catch (error) {
     if (axios.isAxiosError(error)) {
@@ -338,6 +341,7 @@ async function getImageUint8ArrayFromUrl(
  * @param skipProcessed Whether to skip already processed files
  */
 async function processFile(
+  dryRunMode: boolean,
   filePath: string,
   logFilePath: string,
   skipProcessed: boolean = false,
@@ -351,12 +355,13 @@ async function processFile(
     return;
   }
 
+  let selectedAsin: string | null = null;
+  let success = false;
   try {
     // Extract keywords from filename
     let keywords = filenameToKeywords(filename);
-    console.log(`Initial search keywords: "${keywords}"`);
+    console.log(`\nInitial search keywords: "${keywords}"`);
 
-    let selectedAsin: string | null = null;
     let manualSearch = false;
 
     do {
@@ -407,14 +412,7 @@ async function processFile(
 
     const authors = mapAndJoinOnField()(productDetail.product.authors ?? []);
 
-    const { imageBuffer, mime } = await getImageUint8ArrayFromUrl(
-      bookInfo.image,
-    );
-    const image = {
-      imageBuffer,
-      mime,
-      type: { id: 3, name: "front cover" },
-    };
+    const image = await getImageFromUrl(bookInfo.image);
 
     const releaseYear = new Date(productDetail.product.release_date)
       .getFullYear()
@@ -442,19 +440,13 @@ async function processFile(
       tableOfContents: tocTag,
     };
 
-    console.log("removing any existing tags...");
-    removeTags(filePath);
+    console.log("\nremoving any existing tags...");
+    run(dryRunMode, removeTags, filePath);
 
-    console.log("adding new tags...");
-    addTags(tags, filePath);
+    console.log("\nadding new tags...");
+    run(dryRunMode, addTags, tags, filePath);
 
-    markFileProcessed(
-      logFilePath,
-      filename,
-      selectedAsin!,
-      productDetail.product.title,
-      true,
-    );
+    success = true;
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "User chose to skip this file") {
@@ -465,7 +457,15 @@ async function processFile(
     } else {
       console.error(`Unknown error processing file ${filename}`);
     }
-    markFileProcessed(logFilePath, filename, "", "", false);
+  } finally {
+    run(
+      dryRunMode,
+      markFileProcessed,
+      logFilePath,
+      filename,
+      selectedAsin ?? "",
+      success,
+    );
   }
 }
 
@@ -476,87 +476,6 @@ function mapAndJoinOnField(field: string = "name") {
     }
     return arr.map((item) => item[field]).join(", ");
   };
-}
-
-export function encodeImage(image: any) {
-  return new Promise((resolve, reject) => {
-    var img = new Image();
-
-    img.onload = function () {
-      // no need to resize
-      if (
-        (image.mime === "image/jpeg" &&
-          img.width <= 1400 &&
-          img.height <= 1400) ||
-        (image.mime === "image/png" && image.imageBuffer.length < 100000)
-      ) {
-        resolve(image);
-      } else {
-        console.log("Resizing image");
-        // Calculate new dimensions
-        var maxSize = 1400; // maximum size of the largest dimension
-        var width = img.width;
-        var height = img.height;
-
-        if (width > height && width > maxSize) {
-          height *= maxSize / width;
-          width = maxSize;
-        } else if (height > maxSize) {
-          width *= maxSize / height;
-          height = maxSize;
-        }
-
-        // Create a canvas and draw the resized image onto it
-        var canvas = document.createElement("canvas");
-        var ctx = canvas.getContext("2d");
-        canvas.width = width;
-        canvas.height = height;
-        ctx!.drawImage(img, 0, 0, width, height);
-
-        // Convert the canvas content to a JPEG blob
-        canvas.toBlob(function (resizedBlob) {
-          blobToUint8Array(resizedBlob, function (uint8Array: any) {
-            const newImage = {
-              ...image,
-              imageBuffer: uint8Array,
-              mime: "image/jpeg",
-            };
-            console.log("Resized image", newImage);
-            resolve(newImage);
-          });
-        }, "image/jpeg");
-      }
-
-      // Revoke the blob URL to release memory
-      URL.revokeObjectURL(img.src);
-    };
-
-    img.onerror = function () {
-      reject(new Error("Image loading failed"));
-    };
-
-    // Set the source of the image to the blob URL
-    var blob = new Blob([image.imageBuffer], { type: image.mime });
-    img.src = URL.createObjectURL(blob);
-  });
-}
-
-function blobToUint8Array(blob: any, callback: any) {
-  var reader = new FileReader();
-
-  reader.onloadend = function () {
-    if (reader.readyState === FileReader.DONE) {
-      var arrayBuffer = reader.result as ArrayBuffer;
-      var uint8Array = new Uint8Array(arrayBuffer);
-      callback(uint8Array);
-    }
-  };
-
-  reader.onerror = function () {
-    console.error("There was an error reading the blob as an ArrayBuffer.");
-  };
-
-  reader.readAsArrayBuffer(blob);
 }
 
 /**
@@ -571,6 +490,8 @@ async function main(): Promise<void> {
 
     // Check for --process-all flag
     const processAll = args.includes("--process-all");
+    // Check for --dry-run flag
+    const dryRunMode = process.argv.includes("--dry-run");
 
     // Create output directory (same as input directory but with '_chapters' suffix)
     const outputDir = "./output";
@@ -584,13 +505,18 @@ async function main(): Promise<void> {
     // Create log file path
     const logFilePath = path.join(outputDir, "processed_files.json");
 
-    console.log(`Reading files from: ${inputDir}`);
+    console.log(`Input directory: ${inputDir}`);
     console.log(`Output directory: ${outputDir}`);
-    console.log(`Log file: ${logFilePath}`);
+    console.log(`Log file: ${logFilePath}\n`);
+
     if (processAll) {
       console.log(`Mode: Process all files (including previously processed)`);
     } else {
       console.log(`Mode: Skip previously processed files`);
+    }
+
+    if (dryRunMode) {
+      console.log(`Mode: Dry run (no files will be modified)`);
     }
 
     // Get all files in the directory
@@ -609,7 +535,7 @@ async function main(): Promise<void> {
       ].includes(ext);
     });
 
-    console.log(`Found ${audioFiles.length} audio files to process.`);
+    console.log(`\nFound ${audioFiles.length} audio files to process.\n`);
 
     // Count how many files have already been processed
     const log = await readProcessedLog(logFilePath);
@@ -629,11 +555,15 @@ async function main(): Promise<void> {
     // Process each file
     for (let i = 0; i < audioFiles.length; i++) {
       const file = audioFiles[i];
+
       console.log(`\n[${i + 1}/${audioFiles.length}] Processing: ${file}`);
+
       const filePath = path.join(inputDir, file);
       const copyFilePath = path.join(outputDir, file);
-      fs.cp(filePath, copyFilePath, { recursive: true });
-      await processFile(copyFilePath, logFilePath, !processAll);
+
+      run(dryRunMode, fs.cp, filePath, copyFilePath, { recursive: true });
+
+      await processFile(dryRunMode, copyFilePath, logFilePath, !processAll);
     }
 
     console.log("\nAll files processed successfully!");
@@ -647,7 +577,19 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+type Func =
+  | ((...args: any[]) => any)
+  | ((...args: any[]) => Promise<any>)
+  | ((...args: any[]) => void)
+  | ((...args: any[]) => Promise<void>);
 
-// Export functions for use in other modules
-export { searchAudibleBooks, getProductByAsin, getChaptersByAsin };
+function run(dryRunMode: boolean, f: Func, ...args: any[]): any {
+  if (dryRunMode) {
+    const functionName = f.name || "Anonymous function";
+    console.log(`\nDRY RUN MODE: Function "${functionName}" not executed.`);
+    return;
+  }
+  return f(...args);
+}
+
+main();
