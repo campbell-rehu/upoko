@@ -357,6 +357,7 @@ async function processFile(
 
   let selectedAsin: string | null = null;
   let success = false;
+  let title = "";
   try {
     // Extract keywords from filename
     let keywords = filenameToKeywords(filename);
@@ -418,11 +419,13 @@ async function processFile(
       .getFullYear()
       .toString();
 
+    title = productDetail.product.title;
+
     const tags = {
-      title: productDetail.product.title,
+      title,
       artist: authors,
       albumArtist: authors,
-      album: productDetail.product.title,
+      album: title,
       comment: {
         language: "eng",
         text: bookInfo.description,
@@ -464,6 +467,7 @@ async function processFile(
       logFilePath,
       filename,
       selectedAsin ?? "",
+      title,
       success,
     );
   }
