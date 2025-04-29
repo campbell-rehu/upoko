@@ -1,4 +1,3 @@
-import axios from "axios";
 import fs from "fs/promises";
 import readline from "readline";
 import path from "path";
@@ -6,43 +5,17 @@ import NodeID3 from "node-id3";
 import {
   AudibleProductDetailResponse,
   AudibleSearchResponse,
-  AudnexBookResponse,
   ChapterInfo,
-  ChaptersResponse,
 } from "./types.js";
 import { isFileProcessed, markFileProcessed, readProcessedLog } from "./log.js";
-
-type AudibleUrlInput =
-  | { asin: string; keywords?: never }
-  | { asin?: never; keywords: string };
-
-const getAudibleUrl = ({ asin, keywords }: AudibleUrlInput): string => {
-  const base = "https://api.audible.com/1.0/catalog/products";
-  const responseGroups =
-    "contributors,product_attrs,product_desc,product_extended_attrs,series";
-  if (asin) {
-    return `${base}/${asin}?response_groups=${responseGroups}`;
-  }
-  return `${base}?response_groups=${responseGroups}&num_results=10&products_sort_by=Relevance&keywords=${keywords}`;
-};
-
-function convertUint8ArraysToBuffers(obj: any) {
-  // Check if the argument is an object and not null
-  if (typeof obj === "object" && obj !== null) {
-    // Iterate through each key in the object
-    Object.keys(obj).forEach((key: string) => {
-      const value = obj[key];
-      // If the value is an Uint8Array, convert it to a Buffer
-      if (value instanceof Uint8Array) {
-        obj[key] = Buffer.from(value);
-      }
-      // If the value is an object, apply the function recursively
-      else if (typeof value === "object") {
-        convertUint8ArraysToBuffers(value);
-      }
-    });
-  }
-}
+import { convertUint8ArraysToBuffers, mapAndJoinOnField, run } from "./util.js";
+import {
+  getBookInfo,
+  getChaptersByAsin,
+  getImageFromUrl,
+  getProductByAsin,
+  searchAudibleBooks,
+} from "./api.js";
 
 // Function to read a file as a buffer
 // Function to add tags to an MP3 buffer and return a new buffer
@@ -75,111 +48,6 @@ function question(query: string): Promise<string> {
   return new Promise((resolve) => {
     rl.question(query, resolve);
   });
-}
-
-/**
- * Search for audiobooks on Audible with given keywords
- * @param keywords Search terms to find audiobooks
- * @returns Promise containing the search results
- */
-async function searchAudibleBooks(
-  keywords: string,
-): Promise<AudibleSearchResponse> {
-  try {
-    const encodedKeywords = encodeURIComponent(keywords);
-    const url = getAudibleUrl({ keywords: encodedKeywords });
-
-    const response = await axios.get<AudibleSearchResponse>(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Audible API Client/1.0",
-      },
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error("Error searching for audiobooks:", error);
-    throw error;
-  }
-}
-
-/**
- * Get detailed information about a specific product by ASIN
- * @param asin The Audible product ASIN
- * @returns Promise containing the product details
- */
-async function getProductByAsin(
-  asin: string,
-): Promise<AudibleProductDetailResponse> {
-  try {
-    const url = getAudibleUrl({ asin });
-
-    const response = await axios.get<AudibleProductDetailResponse>(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Audible API Client/1.0",
-      },
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error("Error getting product details:", error);
-    throw error;
-  }
-}
-
-/**
- * Fetch book information from the audnex API
- * @param asin The Audible ASIN (Amazon Standard Identification Number) of the book
- * @returns Promise containing the book data
- */
-async function getBookInfo(asin: string): Promise<AudnexBookResponse> {
-  try {
-    const url = `https://api.audnex.us/books/${asin}`;
-
-    const response = await axios.get<AudnexBookResponse>(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Audible API Client/1.0",
-      },
-    });
-
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      console.error("API request failed:", error.message);
-      if (error.response) {
-        console.error("Response status:", error.response.status);
-        console.error("Response data:", error.response.data);
-      }
-    } else {
-      console.error("An unexpected error occurred:", error);
-    }
-    throw error;
-  }
-}
-
-/**
- * Get chapter information for a specific audiobook by ASIN
- * @param asin The Audible product ASIN
- * @returns Promise containing the chapters information
- */
-async function getChaptersByAsin(asin: string): Promise<ChaptersResponse> {
-  try {
-    const url = `https://api.audnex.us/books/${asin}/chapters`;
-
-    const response = await axios.get<ChaptersResponse>(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Audible API Client/1.0",
-      },
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error("Error getting chapters information:", error);
-    throw error;
-  }
 }
 
 /**
@@ -289,48 +157,6 @@ function displayProductDetail(
   console.log(`Author(s): ${authorNames}`);
   console.log(`ASIN: ${product.asin}`);
   console.log("======================\n");
-}
-
-/**
- * Fetches an image from a URL and returns it as a Uint8Array
- * @param imageUrl The URL of the image to fetch
- * @returns Promise containing the image as a Uint8Array
- */
-async function getImageFromUrl(imageUrl: string): Promise<{
-  imageBuffer: Uint8Array;
-  mime: string;
-  type: { id: number; name: string };
-}> {
-  try {
-    // Set responseType to 'arraybuffer' to get binary data
-    const response = await axios.get(imageUrl, {
-      responseType: "arraybuffer",
-      headers: {
-        // Some servers require a user agent
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
-      },
-    });
-
-    // The response.data is already an ArrayBuffer
-    // Convert it to a Uint8Array
-    const out = new Uint8Array(response.data);
-    return {
-      imageBuffer: out,
-      mime: response.headers["content-type"] || "bin",
-      type: { id: 3, name: "front cover" },
-    };
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      console.error("Failed to fetch image:", error.message);
-      if (error.response) {
-        console.error("Status:", error.response.status);
-      }
-    } else {
-      console.error("Unexpected error fetching image:", error);
-    }
-    throw error;
-  }
 }
 
 /**
@@ -473,15 +299,6 @@ async function processFile(
   }
 }
 
-function mapAndJoinOnField(field: string = "name") {
-  return (arr: any[]) => {
-    if (!Array.isArray(arr)) {
-      return "";
-    }
-    return arr.map((item) => item[field]).join(", ");
-  };
-}
-
 /**
  * Main function to run the program from command line
  */
@@ -581,19 +398,6 @@ async function main(): Promise<void> {
   }
 }
 
-type Func =
-  | ((...args: any[]) => any)
-  | ((...args: any[]) => Promise<any>)
-  | ((...args: any[]) => void)
-  | ((...args: any[]) => Promise<void>);
-
-function run(dryRunMode: boolean, f: Func, ...args: any[]): any {
-  if (dryRunMode) {
-    const functionName = f.name || "Anonymous function";
-    console.log(`\nDRY RUN MODE: Function "${functionName}" not executed.`);
-    return;
-  }
-  return f(...args);
-}
+export { processFile, displayProductDetail, filenameToKeywords };
 
 main();
