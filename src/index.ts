@@ -377,6 +377,13 @@ async function main(): Promise<void> {
     for (let i = 0; i < audioFiles.length; i++) {
       const file = audioFiles[i];
 
+      if (log.processedFiles[file].success === true) {
+        if (!processAll) {
+          console.log(`Skipping already processed file: ${file}`);
+          continue;
+        }
+      }
+
       console.log(`\n[${i + 1}/${audioFiles.length}] Processing: ${file}`);
 
       const filePath = path.join(inputDir, file);
