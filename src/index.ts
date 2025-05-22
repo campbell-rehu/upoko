@@ -168,6 +168,7 @@ function displayProductDetail(
  */
 async function processFile(
   dryRunMode: boolean,
+  originalFilePath: string,
   filePath: string,
   logFilePath: string,
   skipProcessed: boolean = false,
@@ -184,6 +185,7 @@ async function processFile(
   let selectedAsin: string | null = null;
   let success = false;
   let title = "";
+  let outputFilename = "";
   try {
     // Extract keywords from filename
     let keywords = filenameToKeywords(filename);
@@ -275,6 +277,12 @@ async function processFile(
     console.log("\nadding new tags...");
     run(dryRunMode, addTags, tags, filePath);
 
+    console.log("\nRenaming file...");
+    // get file extension
+    const ext = path.extname(filePath);
+    outputFilename = `${title} - ${authors} - ${releaseYear}.${ext}`;
+    run(dryRunMode, fs.rename, filePath, path.join("./output", outputFilename));
+
     success = true;
   } catch (error) {
     if (error instanceof Error) {
@@ -291,7 +299,7 @@ async function processFile(
       dryRunMode,
       markFileProcessed,
       logFilePath,
-      filename,
+      originalFilePath,
       selectedAsin ?? "",
       title,
       success,
@@ -377,12 +385,10 @@ async function main(): Promise<void> {
     for (let i = 0; i < audioFiles.length; i++) {
       const file = audioFiles[i];
 
-      if (Boolean(log.processedFiles[file])) {
-        if (log.processedFiles[file].success === true) {
-          if (!processAll) {
-            console.log(`Skipping already processed file: ${file}`);
-            continue;
-          }
+      if (log.processedFiles?.[file]?.success === true) {
+        if (!processAll) {
+          console.log(`Skipping already processed file: ${file}`);
+          continue;
         }
       }
 
@@ -393,7 +399,13 @@ async function main(): Promise<void> {
 
       run(dryRunMode, fs.cp, filePath, copyFilePath, { recursive: true });
 
-      await processFile(dryRunMode, copyFilePath, logFilePath, !processAll);
+      await processFile(
+        dryRunMode,
+        filePath,
+        copyFilePath,
+        logFilePath,
+        !processAll,
+      );
     }
 
     console.log("\nAll files processed successfully!");
