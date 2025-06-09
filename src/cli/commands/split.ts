@@ -57,6 +57,7 @@ function parseSplitArgs(args: string[]): {
   noPlaylist: boolean;
   asin?: string;
   skipValidation: boolean;
+  noSubdir: boolean;
 } {
   const options = {
     output: "./output/split",
@@ -64,6 +65,7 @@ function parseSplitArgs(args: string[]): {
     overwrite: false,
     noPlaylist: false,
     skipValidation: false,
+    noSubdir: false,
   } as any;
 
   for (let i = 0; i < args.length; i++) {
@@ -110,6 +112,9 @@ function parseSplitArgs(args: string[]): {
         break;
       case "--skip-validation":
         options.skipValidation = true;
+        break;
+      case "--no-subdir":
+        options.noSubdir = true;
         break;
       default:
         // If no flag is provided and no input yet, treat as input file
@@ -841,11 +846,19 @@ export async function split(args: string[]): Promise<void> {
   }
 
   // Create output directory for this book
-  const bookOutputDir = await createOutputDirectory(
-    options.output,
-    bookTitle,
-    options.dryRun
-  );
+  let bookOutputDir;
+  if (options.noSubdir) {
+    bookOutputDir = options.output;
+    if (!options.dryRun) {
+      await fs.mkdir(bookOutputDir, { recursive: true });
+    }
+  } else {
+    bookOutputDir = await createOutputDirectory(
+      options.output,
+      bookTitle,
+      options.dryRun
+    );
+  }
   
   console.log(`\nOutput directory: ${bookOutputDir}`);
 

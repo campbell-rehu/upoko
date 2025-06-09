@@ -136,7 +136,8 @@ async function runSplitCommand(input: string, output: string): Promise<{ success
       'split',
       '--input', input,
       '--output', output,
-      '--skip-validation'
+      '--skip-validation',
+      '--no-subdir'
     ];
 
     const proc = spawn('node', args, {
