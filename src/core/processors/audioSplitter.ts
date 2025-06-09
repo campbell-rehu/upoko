@@ -166,9 +166,7 @@ export async function processChapterSplit(
     if (options?.dryRun) {
       console.log(`    DRY RUN: Would create ${outputFileName}`);
     } else {
-      await run(
-        false,
-        FFmpegService.splitAudioByTime,
+      await FFmpegService.splitAudioByTime(
         inputPath,
         outputPath,
         chapter.startOffsetMs,
