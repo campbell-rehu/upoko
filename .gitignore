@@ -144,3 +144,7 @@ output
 src/**/*.js
 src/**/*.js.map
 src/**/*.d.ts
+
+# Test output directories
+test-output/
+**/test-output/
