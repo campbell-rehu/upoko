@@ -2,7 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { createRequire } from 'module';
-import { AudioFormat, FFmpegProgress } from '../models/types.js';
+import { AudioFormat, FFmpegProgress, ChapterInfo } from '../models/types.js';
 
 // Use createRequire to import CommonJS modules in ES module context
 const require = createRequire(import.meta.url);
@@ -174,6 +174,87 @@ export class FFmpegService {
         reject(new Error(`Failed to spawn ffmpeg: ${error.message}`));
       });
     });
+  }
+
+  /**
+   * Extract chapter information from M4B audiobook files using ffprobe
+   */
+  static async extractChaptersFromM4B(filePath: string): Promise<ChapterInfo[] | null> {
+    console.log(`Extracting chapters from: ${filePath}`);
+    
+    try {
+      // Validate the file first
+      await this.validateAudioFile(filePath);
+
+      return new Promise((resolve, reject) => {
+        const args = [
+          '-v', 'quiet',
+          '-print_format', 'json',
+          '-show_chapters',
+          filePath
+        ];
+
+        const ffprobe = spawn(ffprobePath, args);
+        let stdout = '';
+        let stderr = '';
+
+        ffprobe.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+        });
+
+        ffprobe.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+        });
+
+        ffprobe.on('close', (code: number | null) => {
+          if (code !== 0) {
+            console.error(`FFprobe failed with code ${code}: ${stderr}`);
+            resolve(null);
+            return;
+          }
+
+          try {
+            const probeData = JSON.parse(stdout);
+            
+            if (!probeData.chapters || !Array.isArray(probeData.chapters) || probeData.chapters.length === 0) {
+              console.log('No chapters found in the M4B file');
+              resolve(null);
+              return;
+            }
+
+            const chapters: ChapterInfo[] = probeData.chapters.map((chapter: any) => {
+              // Convert seconds to milliseconds
+              const startTimeMs = parseFloat(chapter.start_time) * 1000;
+              const endTimeMs = parseFloat(chapter.end_time) * 1000;
+              const durationMs = endTimeMs - startTimeMs;
+
+              // Extract title from tags if available
+              const title = chapter.tags?.title || `Chapter ${chapter.id}`;
+
+              return {
+                title: title,
+                lengthMs: Math.round(durationMs),
+                startOffsetMs: Math.round(startTimeMs)
+              };
+            });
+
+            console.log(`Successfully extracted ${chapters.length} chapters from M4B file`);
+            resolve(chapters);
+          } catch (parseError) {
+            console.error(`Failed to parse ffprobe chapter output: ${parseError}`);
+            resolve(null);
+          }
+        });
+
+        ffprobe.on('error', (error: Error) => {
+          console.error(`Failed to spawn ffprobe for chapter extraction: ${error.message}`);
+          resolve(null);
+        });
+      });
+    } catch (error) {
+      console.error(`Error extracting chapters from M4B: ${error instanceof Error ? error.message : error}`);
+      return null;
+    }
   }
 
   /**
