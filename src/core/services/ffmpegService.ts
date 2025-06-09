@@ -2,7 +2,8 @@ import { spawn, ChildProcess } from 'child_process';
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { createRequire } from 'module';
-import { AudioFormat, FFmpegProgress } from '../models/types.js';
+import os from 'os';
+import { AudioFormat, FFmpegProgress, ChapterInfo } from '../models/types.js';
 
 // Use createRequire to import CommonJS modules in ES module context
 const require = createRequire(import.meta.url);
@@ -174,6 +175,180 @@ export class FFmpegService {
         reject(new Error(`Failed to spawn ffmpeg: ${error.message}`));
       });
     });
+  }
+
+  /**
+   * Extract chapter information from M4B audiobook files using ffprobe
+   */
+  static async extractChaptersFromM4B(filePath: string): Promise<ChapterInfo[] | null> {
+    console.log(`Extracting chapters from: ${filePath}`);
+    
+    try {
+      // Validate the file first
+      await this.validateAudioFile(filePath);
+
+      return new Promise((resolve, reject) => {
+        const args = [
+          '-v', 'quiet',
+          '-print_format', 'json',
+          '-show_chapters',
+          filePath
+        ];
+
+        const ffprobe = spawn(ffprobePath, args);
+        let stdout = '';
+        let stderr = '';
+
+        ffprobe.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+        });
+
+        ffprobe.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+        });
+
+        ffprobe.on('close', (code: number | null) => {
+          if (code !== 0) {
+            console.error(`FFprobe failed with code ${code}: ${stderr}`);
+            resolve(null);
+            return;
+          }
+
+          try {
+            const probeData = JSON.parse(stdout);
+            
+            if (!probeData.chapters || !Array.isArray(probeData.chapters) || probeData.chapters.length === 0) {
+              console.log('No chapters found in the M4B file');
+              resolve(null);
+              return;
+            }
+
+            const chapters: ChapterInfo[] = probeData.chapters.map((chapter: any) => {
+              // Convert seconds to milliseconds
+              const startTimeMs = parseFloat(chapter.start_time) * 1000;
+              const endTimeMs = parseFloat(chapter.end_time) * 1000;
+              const durationMs = endTimeMs - startTimeMs;
+
+              // Extract title from tags if available
+              const title = chapter.tags?.title || `Chapter ${chapter.id}`;
+
+              return {
+                title: title,
+                lengthMs: Math.round(durationMs),
+                startOffsetMs: Math.round(startTimeMs)
+              };
+            });
+
+            console.log(`Successfully extracted ${chapters.length} chapters from M4B file`);
+            resolve(chapters);
+          } catch (parseError) {
+            console.error(`Failed to parse ffprobe chapter output: ${parseError}`);
+            resolve(null);
+          }
+        });
+
+        ffprobe.on('error', (error: Error) => {
+          console.error(`Failed to spawn ffprobe for chapter extraction: ${error.message}`);
+          resolve(null);
+        });
+      });
+    } catch (error) {
+      console.error(`Error extracting chapters from M4B: ${error instanceof Error ? error.message : error}`);
+      return null;
+    }
+  }
+
+  /**
+   * Add metadata and artwork to M4B/M4A files using FFmpeg
+   */
+  static async addMetadataToFile(
+    inputPath: string, 
+    outputPath: string,
+    metadata: any
+  ): Promise<void> {
+    await this.validateAudioFile(inputPath);
+    
+    // Ensure output directory exists
+    await fs.mkdir(dirname(outputPath), { recursive: true });
+
+    let tempArtworkPath: string | null = null;
+
+    try {
+      return await new Promise(async (resolve, reject) => {
+        const args = [
+          '-v', 'quiet', // Suppress verbose output
+          '-i', inputPath,
+          '-c', 'copy', // Copy streams without re-encoding
+        ];
+
+        // Handle artwork if provided
+        if (metadata.image) {
+          try {
+            // Create temporary file for artwork
+            const tempDir = await fs.mkdtemp(join(os.tmpdir(), 'upoko-artwork-'));
+            tempArtworkPath = join(tempDir, 'artwork.jpg');
+            
+            // Write image buffer to temporary file
+            const imageBuffer = Buffer.isBuffer(metadata.image) 
+              ? metadata.image 
+              : Buffer.from(metadata.image.imageBuffer || metadata.image, 'base64');
+            
+            await fs.writeFile(tempArtworkPath, imageBuffer);
+            
+            // Add artwork to FFmpeg args
+            args.push('-i', tempArtworkPath);
+            args.push('-map', '0:0', '-map', '1:0');
+            args.push('-c:v', 'copy');
+            args.push('-disposition:v:0', 'attached_pic');
+          } catch (artworkError) {
+            console.warn('Failed to process artwork:', artworkError);
+            // Continue without artwork
+          }
+        }
+
+        // Add metadata tags
+        if (metadata.title) args.push('-metadata', `title=${metadata.title}`);
+        if (metadata.album) args.push('-metadata', `album=${metadata.album}`);
+        if (metadata.artist) args.push('-metadata', `artist=${metadata.artist}`);
+        if (metadata.albumArtist) args.push('-metadata', `album_artist=${metadata.albumArtist}`);
+        if (metadata.genre) args.push('-metadata', `genre=${metadata.genre}`);
+        if (metadata.year) args.push('-metadata', `date=${metadata.year}`);
+        if (metadata.trackNumber) args.push('-metadata', `track=${metadata.trackNumber}`);
+        if (metadata.comment?.text) args.push('-metadata', `comment=${metadata.comment.text}`);
+
+        // Determine output format from input file extension
+        const inputExt = inputPath.split('.').pop()?.toLowerCase();
+        if (inputExt === 'm4b' || inputExt === 'm4a') {
+          args.push('-f', 'mp4');
+        }
+
+        args.push('-y', outputPath);
+
+        const ffmpeg = spawn(ffmpegStatic, args);
+
+        ffmpeg.on('close', (code: number | null) => {
+          if (code !== 0) {
+            reject(new Error(`FFmpeg metadata addition failed with code ${code}`));
+            return;
+          }
+          resolve();
+        });
+
+        ffmpeg.on('error', (error: Error) => {
+          reject(new Error(`Failed to spawn ffmpeg for metadata: ${error.message}`));
+        });
+      });
+    } finally {
+      // Clean up temporary artwork file
+      if (tempArtworkPath) {
+        try {
+          await fs.unlink(tempArtworkPath);
+          await fs.rmdir(dirname(tempArtworkPath));
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    }
   }
 
   /**

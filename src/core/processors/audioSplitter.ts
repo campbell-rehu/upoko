@@ -192,27 +192,45 @@ export async function processChapterSplit(
         inputPath,
         outputPath,
         chapter.startOffsetMs,
-        chapter.lengthMs
+        chapter.lengthMs,
+        (progress) => {
+          // Show progress as percentage
+          process.stdout.write(`\r  [${chapterNumber.toString().padStart(2, '0')}/${config.chapters.length}] "${chapter.title}" (${durationStr})... ${Math.round(progress)}%`);
+        }
       );
       
+      // Clear the progress line and show completion
+      process.stdout.write(`\r  [${chapterNumber.toString().padStart(2, '0')}/${config.chapters.length}] "${chapter.title}" (${durationStr})... ✅\n`);
+      
       // Apply chapter-specific metadata including album artwork
-      if (config.format === 'mp3') {
-        const chapterMetadata = createChapterMetadata(
-          config,
-          chapter,
-          chapterNumber,
-          config.chapters.length,
-          config.metadata?.image
-        );
-        
-        try {
+      const chapterMetadata = createChapterMetadata(
+        config,
+        chapter,
+        chapterNumber,
+        config.chapters.length,
+        config.metadata?.image
+      );
+      
+      try {
+        if (config.format === 'mp3') {
           addTags(chapterMetadata, outputPath);
           console.log(`✅`);
-        } catch (metadataError) {
-          console.log(`⚠️  (no metadata)`);
+        } else {
+          // For M4B, M4A, and other formats, try to use FFmpeg to add metadata
+          try {
+            const tempOutputPath = outputPath + '.tmp';
+            await FFmpegService.addMetadataToFile(outputPath, tempOutputPath, chapterMetadata);
+            
+            // Replace original with metadata-enhanced version
+            await fs.rename(tempOutputPath, outputPath);
+            console.log(`✅`);
+          } catch (ffmpegError) {
+            // FFmpeg metadata failed, but file is still successfully split
+            console.log(`✅ (no metadata)`);
+          }
         }
-      } else {
-        console.log(`✅ (no metadata)`);
+      } catch (metadataError) {
+        console.log(`⚠️  (metadata failed)`);
       }
     }
 
@@ -351,8 +369,8 @@ function generateChapterFileName(
     .trim()
     .substring(0, 50);
 
-  // Format chapter number with leading zeros
-  const chapterNum = chapterNumber.toString().padStart(3, '0');
+  // Format chapter number with leading zeros (2 digits)
+  const chapterNum = chapterNumber.toString().padStart(2, '0');
 
   // Sanitize chapter title (already normalized by validator)
   const safeChapterTitle = chapterTitle.substring(0, 100);
@@ -360,7 +378,7 @@ function generateChapterFileName(
   // Ensure format starts with dot
   const extension = format.startsWith('.') ? format : `.${format}`;
 
-  return `${safeBookTitle} - ${chapterNum} - ${safeChapterTitle}${extension}`;
+  return `${chapterNum} ${safeChapterTitle}${extension}`;
 }
 
 /**

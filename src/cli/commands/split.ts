@@ -1,5 +1,7 @@
 import path from "path";
 import { promises as fs } from "fs";
+import { spawn } from "child_process";
+import { createRequire } from "module";
 import NodeID3 from "node-id3";
 import { run } from "../../util.js";
 import {
@@ -18,6 +20,7 @@ import {
   splitAudioByChapters,
   prepareSplitOperation,
 } from "../../core/processors/audioSplitter.js";
+import { FFmpegService } from "../../core/services/ffmpegService.js";
 import {
   ChapterInfo,
   ChapterSplitConfig,
@@ -37,6 +40,9 @@ import {
 } from "../ui/prompts.js";
 import { processFile } from "./process.js";
 
+// Use createRequire to import CommonJS modules in ES module context
+const require = createRequire(import.meta.url);
+
 /**
  * Parse command line arguments for split command
  * @param args Command line arguments
@@ -51,6 +57,7 @@ function parseSplitArgs(args: string[]): {
   noPlaylist: boolean;
   asin?: string;
   skipValidation: boolean;
+  noSubdir: boolean;
 } {
   const options = {
     output: "./output/split",
@@ -58,6 +65,7 @@ function parseSplitArgs(args: string[]): {
     overwrite: false,
     noPlaylist: false,
     skipValidation: false,
+    noSubdir: false,
   } as any;
 
   for (let i = 0; i < args.length; i++) {
@@ -104,6 +112,9 @@ function parseSplitArgs(args: string[]): {
         break;
       case "--skip-validation":
         options.skipValidation = true;
+        break;
+      case "--no-subdir":
+        options.noSubdir = true;
         break;
       default:
         // If no flag is provided and no input yet, treat as input file
@@ -215,8 +226,118 @@ async function extractChaptersFromFile(filePath: string): Promise<{
       }
     }
     
-    // For other formats, we could add support later
-    // (M4A/M4B files might have chapter metadata in different format)
+    // For M4B/M4A files, use FFmpegService to extract chapters
+    if (ext === ".m4b" || ext === ".m4a") {
+      console.log("Checking for M4B/M4A chapter metadata...");
+      const chapters = await FFmpegService.extractChaptersFromM4B(filePath);
+      
+      if (chapters && chapters.length > 0) {
+        // Extract book title from M4B metadata using ffprobe
+        console.log("Extracting book title from M4B metadata...");
+        
+        const probeResult = await new Promise<any>((resolve, reject) => {
+          const ffprobeStatic = require("ffprobe-static");
+          const ffprobePath = typeof ffprobeStatic === 'string' ? ffprobeStatic : ffprobeStatic.path;
+          
+          const args = [
+            '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_format',
+            filePath
+          ];
+          
+          const ffprobe = spawn(ffprobePath, args);
+          let stdout = '';
+          let stderr = '';
+          
+          ffprobe.stdout.on('data', (data: Buffer) => {
+            stdout += data.toString();
+          });
+          
+          ffprobe.stderr.on('data', (data: Buffer) => {
+            stderr += data.toString();
+          });
+          
+          ffprobe.on('close', (code: number | null) => {
+            if (code !== 0) {
+              reject(new Error(`FFprobe failed: ${stderr}`));
+              return;
+            }
+            
+            try {
+              const data = JSON.parse(stdout);
+              resolve(data);
+            } catch (parseError) {
+              reject(new Error(`Failed to parse ffprobe output: ${parseError}`));
+            }
+          });
+          
+          ffprobe.on('error', (error: Error) => {
+            reject(error);
+          });
+        });
+        
+        // Extract metadata from ffprobe result
+        let bookTitle = "Unknown Book";
+        let asin = "";
+        
+        if (probeResult && probeResult.format && probeResult.format.tags) {
+          const tags = probeResult.format.tags;
+          
+          // Try to get book title from various fields
+          bookTitle = tags.title || tags.album || tags.album_artist || "Unknown Book";
+          
+          // Try to extract ASIN from metadata
+          const asinRegex = /\b(B0[0-9A-Z]{8})\b/;
+          
+          // Check comment field for ASIN
+          if (tags.comment) {
+            const asinMatch = tags.comment.match(asinRegex);
+            if (asinMatch && isValidAsin(asinMatch[1])) {
+              asin = asinMatch[1];
+            }
+          }
+          
+          // Check description field for ASIN
+          if (!asin && tags.description) {
+            const asinMatch = tags.description.match(asinRegex);
+            if (asinMatch && isValidAsin(asinMatch[1])) {
+              asin = asinMatch[1];
+            }
+          }
+          
+          // Check all metadata fields for ASIN
+          if (!asin) {
+            for (const [key, value] of Object.entries(tags)) {
+              if (typeof value === 'string') {
+                // Check if the key contains 'asin' (case-insensitive)
+                if (key.toLowerCase().includes('asin')) {
+                  const potentialAsin = value.trim();
+                  if (isValidAsin(potentialAsin)) {
+                    asin = potentialAsin;
+                    break;
+                  }
+                }
+                
+                // Also check if the value contains an ASIN pattern
+                const asinMatch = value.match(asinRegex);
+                if (asinMatch && isValidAsin(asinMatch[1])) {
+                  asin = asinMatch[1];
+                  break;
+                }
+              }
+            }
+          }
+        }
+        
+        console.log(`✅ Found ${chapters.length} chapters in M4B metadata`);
+        return {
+          chapters,
+          bookTitle,
+          asin,
+        };
+      }
+    }
     
     return null;
   } catch (error) {
@@ -230,7 +351,7 @@ async function extractChaptersFromFile(filePath: string): Promise<{
  * @param filePath Path to the audio file
  * @returns ASIN if found, null otherwise
  */
-async function extractAsinFromFile(filePath: string): Promise<string | null> {
+async function extractAsinFromFile(filePath: string): Promise<{ asin: string; bookTitle?: string } | null> {
   try {
     const ext = path.extname(filePath).toLowerCase();
     
@@ -242,7 +363,10 @@ async function extractAsinFromFile(filePath: string): Promise<string | null> {
       if (tags.comment?.text) {
         const asinMatch = tags.comment.text.match(/\b([B0][A-Z0-9]{9})\b/);
         if (asinMatch && isValidAsin(asinMatch[1])) {
-          return asinMatch[1];
+          return { 
+            asin: asinMatch[1],
+            bookTitle: tags.title || tags.album
+          };
         }
       }
       
@@ -252,15 +376,120 @@ async function extractAsinFromFile(filePath: string): Promise<string | null> {
           if (frame.description?.toLowerCase().includes("asin") && frame.value) {
             const potentialAsin = frame.value.trim();
             if (isValidAsin(potentialAsin)) {
-              return potentialAsin;
+              return { 
+                asin: potentialAsin,
+                bookTitle: tags.title || tags.album
+              };
             }
           }
         }
       }
     }
     
-    // For other formats, we might need different approaches
-    // This is a placeholder for future enhancements
+    // For M4B/M4A files, use FFmpeg to extract metadata
+    if (ext === ".m4b" || ext === ".m4a") {
+      console.log("Checking M4B/M4A metadata for ASIN...");
+      
+      // Run ffprobe to get metadata
+      const probeResult = await new Promise<any>((resolve, reject) => {
+        const ffprobeStatic = require("ffprobe-static");
+        const ffprobePath = typeof ffprobeStatic === 'string' ? ffprobeStatic : ffprobeStatic.path;
+        
+        const args = [
+          '-v', 'quiet',
+          '-print_format', 'json',
+          '-show_format',
+          filePath
+        ];
+        
+        const ffprobe = spawn(ffprobePath, args);
+        let stdout = '';
+        let stderr = '';
+        
+        ffprobe.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+        });
+        
+        ffprobe.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+        });
+        
+        ffprobe.on('close', (code: number | null) => {
+          if (code !== 0) {
+            reject(new Error(`FFprobe failed: ${stderr}`));
+            return;
+          }
+          
+          try {
+            const data = JSON.parse(stdout);
+            resolve(data);
+          } catch (parseError) {
+            reject(new Error(`Failed to parse ffprobe output: ${parseError}`));
+          }
+        });
+        
+        ffprobe.on('error', (error: Error) => {
+          reject(error);
+        });
+      });
+      
+      // Extract metadata from ffprobe result
+      if (probeResult && probeResult.format && probeResult.format.tags) {
+        const tags = probeResult.format.tags;
+        const asinRegex = /\b(B0[0-9A-Z]{8})\b/;
+        
+        // Check comment field
+        if (tags.comment) {
+          const asinMatch = tags.comment.match(asinRegex);
+          if (asinMatch && isValidAsin(asinMatch[1])) {
+            console.log(`Found ASIN in M4B comment field: ${asinMatch[1]}`);
+            return { 
+              asin: asinMatch[1],
+              bookTitle: tags.title || tags.album || tags.album_artist
+            };
+          }
+        }
+        
+        // Check description field
+        if (tags.description) {
+          const asinMatch = tags.description.match(asinRegex);
+          if (asinMatch && isValidAsin(asinMatch[1])) {
+            console.log(`Found ASIN in M4B description field: ${asinMatch[1]}`);
+            return { 
+              asin: asinMatch[1],
+              bookTitle: tags.title || tags.album || tags.album_artist
+            };
+          }
+        }
+        
+        // Check all custom metadata fields for ASIN
+        for (const [key, value] of Object.entries(tags)) {
+          if (typeof value === 'string') {
+            // Check if the key contains 'asin' (case-insensitive)
+            if (key.toLowerCase().includes('asin')) {
+              const potentialAsin = value.trim();
+              if (isValidAsin(potentialAsin)) {
+                console.log(`Found ASIN in M4B ${key} field: ${potentialAsin}`);
+                return { 
+                  asin: potentialAsin,
+                  bookTitle: tags.title || tags.album || tags.album_artist
+                };
+              }
+            }
+            
+            // Also check if the value contains an ASIN pattern
+            const asinMatch = value.match(asinRegex);
+            if (asinMatch && isValidAsin(asinMatch[1])) {
+              console.log(`Found ASIN in M4B ${key} field: ${asinMatch[1]}`);
+              return { 
+                asin: asinMatch[1],
+                bookTitle: tags.title || tags.album || tags.album_artist
+              };
+            }
+          }
+        }
+      }
+    }
     
     return null;
   } catch (error) {
@@ -323,10 +552,14 @@ async function getChaptersInfo(
     if (!selectedAsin) {
       // Try to extract ASIN from file metadata
       console.log("Checking file metadata for ASIN...");
-      selectedAsin = await extractAsinFromFile(filePath);
+      const extractedData = await extractAsinFromFile(filePath);
       
-      if (selectedAsin) {
+      if (extractedData) {
+        selectedAsin = extractedData.asin;
         console.log(`Found ASIN in metadata: ${selectedAsin}`);
+        if (extractedData.bookTitle) {
+          bookTitle = extractedData.bookTitle;
+        }
       }
     }
 
@@ -613,11 +846,19 @@ export async function split(args: string[]): Promise<void> {
   }
 
   // Create output directory for this book
-  const bookOutputDir = await createOutputDirectory(
-    options.output,
-    bookTitle,
-    options.dryRun
-  );
+  let bookOutputDir;
+  if (options.noSubdir) {
+    bookOutputDir = options.output;
+    if (!options.dryRun) {
+      await fs.mkdir(bookOutputDir, { recursive: true });
+    }
+  } else {
+    bookOutputDir = await createOutputDirectory(
+      options.output,
+      bookTitle,
+      options.dryRun
+    );
+  }
   
   console.log(`\nOutput directory: ${bookOutputDir}`);
 
