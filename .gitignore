@@ -139,3 +139,8 @@ dist
 input
 output
 .claude/settings.local.json
+
+# TypeScript build artifacts
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
