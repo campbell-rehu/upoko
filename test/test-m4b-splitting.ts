@@ -161,9 +161,10 @@ async function runSplitCommand(input: string, output: string): Promise<{ success
 
     proc.on('close', (code) => {
       if (code === 0) {
-        // Extract the actual output directory from stdout
-        const dirMatch = stdout.match(/Output directory: (.+)/);
-        const outputDir = dirMatch ? dirMatch[1].trim() : output;
+        // Extract the actual output directory from stdout (last occurrence)
+        const dirMatches = stdout.match(/Output directory: (.+)/g);
+        const lastMatch = dirMatches ? dirMatches[dirMatches.length - 1] : null;
+        const outputDir = lastMatch ? lastMatch.replace('Output directory: ', '').trim() : output;
         resolve({ success: true, outputDir });
       } else {
         resolve({ 
