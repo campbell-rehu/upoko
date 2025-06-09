@@ -1,5 +1,6 @@
-import { ProcessedLog } from "./types.js";
 import fs from "fs/promises";
+import path from "path";
+import { ProcessedLog } from "../models/types.js";
 
 /**
  * Check if a file has been successfully processed before
@@ -39,6 +40,7 @@ export async function markFileProcessed(
   };
   await saveProcessedLog(logFilePath, log);
 }
+
 /**
  * Read the log file if it exists, or create a new empty log object
  * @param logFilePath Path to the log file
@@ -66,4 +68,57 @@ export async function saveProcessedLog(
   log: ProcessedLog,
 ): Promise<void> {
   await fs.writeFile(logFilePath, JSON.stringify(log, null, 2), "utf8");
+}
+
+/**
+ * Get all audio files from a directory
+ * @param directory The directory to scan
+ * @returns Array of audio file names
+ */
+export async function getAudioFiles(directory: string): Promise<string[]> {
+  const files = await fs.readdir(directory);
+  return files.filter((file) => {
+    const ext = path.extname(file).toLowerCase();
+    return [
+      ".mp3",
+      ".m4a",
+      ".m4b",
+      ".aax",
+      ".mp4",
+      ".ogg",
+      ".flac",
+      ".wav",
+    ].includes(ext);
+  });
+}
+
+/**
+ * Ensure a directory exists, creating it if necessary
+ * @param directory The directory path to ensure exists
+ */
+export async function ensureDirectoryExists(directory: string): Promise<void> {
+  try {
+    await fs.mkdir(directory, { recursive: true });
+  } catch (err) {
+    console.error(`Error creating directory ${directory}:`, err);
+    throw err;
+  }
+}
+
+/**
+ * Copy a file from source to destination
+ * @param source Source file path
+ * @param destination Destination file path
+ */
+export async function copyFile(source: string, destination: string): Promise<void> {
+  await fs.cp(source, destination, { recursive: true });
+}
+
+/**
+ * Rename a file
+ * @param oldPath Current file path
+ * @param newPath New file path
+ */
+export async function renameFile(oldPath: string, newPath: string): Promise<void> {
+  await fs.rename(oldPath, newPath);
 }
