@@ -358,8 +358,8 @@ function generateChapterFileName(
     .trim()
     .substring(0, 50);
 
-  // Format chapter number with leading zeros
-  const chapterNum = chapterNumber.toString().padStart(3, '0');
+  // Format chapter number with leading zeros (2 digits)
+  const chapterNum = chapterNumber.toString().padStart(2, '0');
 
   // Sanitize chapter title (already normalized by validator)
   const safeChapterTitle = chapterTitle.substring(0, 100);
@@ -367,7 +367,7 @@ function generateChapterFileName(
   // Ensure format starts with dot
   const extension = format.startsWith('.') ? format : `.${format}`;
 
-  return `${safeBookTitle} - ${chapterNum} - ${safeChapterTitle}${extension}`;
+  return `${chapterNum} ${safeChapterTitle}${extension}`;
 }
 
 /**
