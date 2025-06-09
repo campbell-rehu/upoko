@@ -20,6 +20,7 @@ import {
   splitAudioByChapters,
   prepareSplitOperation,
 } from "../../core/processors/audioSplitter.js";
+import { FFmpegService } from "../../core/services/ffmpegService.js";
 import {
   ChapterInfo,
   ChapterSplitConfig,
@@ -220,8 +221,118 @@ async function extractChaptersFromFile(filePath: string): Promise<{
       }
     }
     
-    // For other formats, we could add support later
-    // (M4A/M4B files might have chapter metadata in different format)
+    // For M4B/M4A files, use FFmpegService to extract chapters
+    if (ext === ".m4b" || ext === ".m4a") {
+      console.log("Checking for M4B/M4A chapter metadata...");
+      const chapters = await FFmpegService.extractChaptersFromM4B(filePath);
+      
+      if (chapters && chapters.length > 0) {
+        // Extract book title from M4B metadata using ffprobe
+        console.log("Extracting book title from M4B metadata...");
+        
+        const probeResult = await new Promise<any>((resolve, reject) => {
+          const ffprobeStatic = require("ffprobe-static");
+          const ffprobePath = typeof ffprobeStatic === 'string' ? ffprobeStatic : ffprobeStatic.path;
+          
+          const args = [
+            '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_format',
+            filePath
+          ];
+          
+          const ffprobe = spawn(ffprobePath, args);
+          let stdout = '';
+          let stderr = '';
+          
+          ffprobe.stdout.on('data', (data: Buffer) => {
+            stdout += data.toString();
+          });
+          
+          ffprobe.stderr.on('data', (data: Buffer) => {
+            stderr += data.toString();
+          });
+          
+          ffprobe.on('close', (code: number | null) => {
+            if (code !== 0) {
+              reject(new Error(`FFprobe failed: ${stderr}`));
+              return;
+            }
+            
+            try {
+              const data = JSON.parse(stdout);
+              resolve(data);
+            } catch (parseError) {
+              reject(new Error(`Failed to parse ffprobe output: ${parseError}`));
+            }
+          });
+          
+          ffprobe.on('error', (error: Error) => {
+            reject(error);
+          });
+        });
+        
+        // Extract metadata from ffprobe result
+        let bookTitle = "Unknown Book";
+        let asin = "";
+        
+        if (probeResult && probeResult.format && probeResult.format.tags) {
+          const tags = probeResult.format.tags;
+          
+          // Try to get book title from various fields
+          bookTitle = tags.title || tags.album || tags.album_artist || "Unknown Book";
+          
+          // Try to extract ASIN from metadata
+          const asinRegex = /\b(B0[0-9A-Z]{8})\b/;
+          
+          // Check comment field for ASIN
+          if (tags.comment) {
+            const asinMatch = tags.comment.match(asinRegex);
+            if (asinMatch && isValidAsin(asinMatch[1])) {
+              asin = asinMatch[1];
+            }
+          }
+          
+          // Check description field for ASIN
+          if (!asin && tags.description) {
+            const asinMatch = tags.description.match(asinRegex);
+            if (asinMatch && isValidAsin(asinMatch[1])) {
+              asin = asinMatch[1];
+            }
+          }
+          
+          // Check all metadata fields for ASIN
+          if (!asin) {
+            for (const [key, value] of Object.entries(tags)) {
+              if (typeof value === 'string') {
+                // Check if the key contains 'asin' (case-insensitive)
+                if (key.toLowerCase().includes('asin')) {
+                  const potentialAsin = value.trim();
+                  if (isValidAsin(potentialAsin)) {
+                    asin = potentialAsin;
+                    break;
+                  }
+                }
+                
+                // Also check if the value contains an ASIN pattern
+                const asinMatch = value.match(asinRegex);
+                if (asinMatch && isValidAsin(asinMatch[1])) {
+                  asin = asinMatch[1];
+                  break;
+                }
+              }
+            }
+          }
+        }
+        
+        console.log(`✅ Found ${chapters.length} chapters in M4B metadata`);
+        return {
+          chapters,
+          bookTitle,
+          asin,
+        };
+      }
+    }
     
     return null;
   } catch (error) {
