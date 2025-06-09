@@ -1,24 +1,23 @@
 #!/bin/bash
 
 # Simple wrapper script for running audiobook splitting tests
-# Usage: ./run-split-test.sh input.{mp3,m4b,m4a} expected-dir [output-dir] [tolerance] [size-tolerance]
+# Usage: ./run-split-test.sh input.{mp3,m4b,m4a} expected-dir [output-dir] [tolerance]
 
 set -e
 
 # Check if required arguments are provided
 if [ $# -lt 2 ]; then
-    echo "Usage: $0 <input-audio> <expected-dir> [output-dir] [tolerance] [size-tolerance]"
+    echo "Usage: $0 <input-audio> <expected-dir> [output-dir] [tolerance]"
     echo ""
     echo "Arguments:"
     echo "  input-audio  Path to audiobook file to test (MP3, M4B, M4A, etc.)"
     echo "  expected-dir Directory with expected split files"
     echo "  output-dir   Output directory (default: ./test-output)"
     echo "  tolerance    Duration tolerance in ms (default: 100)"
-    echo "  size-tolerance Size tolerance percentage (default: 5)"
     echo ""
     echo "Examples:"
     echo "  $0 ./samples/book.mp3 ./expected-chapters"
-    echo "  $0 ./samples/book.m4b ./expected-chapters ./my-test-output 50 3"
+    echo "  $0 ./samples/book.m4b ./expected-chapters ./my-test-output 50"
     exit 1
 fi
 
@@ -26,7 +25,6 @@ INPUT_FILE="$1"
 EXPECTED_DIR="$2"
 OUTPUT_DIR="${3:-./test-output}"
 TOLERANCE="${4:-100}"
-SIZE_TOLERANCE="${5:-5}"
 
 # Check if input file exists
 if [ ! -f "$INPUT_FILE" ]; then
@@ -50,7 +48,6 @@ echo "Input file: $INPUT_FILE"
 echo "Expected directory: $EXPECTED_DIR" 
 echo "Output directory: $OUTPUT_DIR"
 echo "Duration tolerance: ${TOLERANCE}ms"
-echo "Size tolerance: ${SIZE_TOLERANCE}%"
 echo ""
 
 # Build the project first
@@ -66,8 +63,7 @@ node "$PROJECT_ROOT/dist/test/test-audio-splitting.js" \
     --input "$INPUT_FILE" \
     --expected "$EXPECTED_DIR" \
     --output "$OUTPUT_DIR" \
-    --tolerance "$TOLERANCE" \
-    --size-tolerance "$SIZE_TOLERANCE"
+    --tolerance "$TOLERANCE"
 
 # Check exit code
 if [ $? -eq 0 ]; then

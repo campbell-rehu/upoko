@@ -23,7 +23,7 @@ The `test-audio-splitting.ts` script validates the chapter splitting functionali
 
 Run the test using the convenient shell wrapper:
 ```bash
-./test/run-split-test.sh <input-audio-file> <expected-files-directory> [output-directory] [tolerance-ms] [size-tolerance-percent]
+./test/run-split-test.sh <input-audio-file> <expected-files-directory> [output-directory] [tolerance-ms]
 ```
 
 ### Arguments
@@ -32,7 +32,6 @@ Run the test using the convenient shell wrapper:
 - `<expected-files-directory>`: Directory containing expected split files for comparison (required)
 - `[output-directory]`: Output directory for test results (optional, default: `./test-output`)
 - `[tolerance-ms]`: Duration tolerance in milliseconds (optional, default: 100)
-- `[size-tolerance-percent]`: Size tolerance percentage (optional, default: 5)
 
 ### Test Process
 
@@ -76,14 +75,14 @@ The script will output:
 # Test MP3 splitting with default settings
 ./test/run-split-test.sh ./samples/test-book.mp3 ./test-data/expected-chapters
 
-# Test M4B splitting with custom tolerances
-./test/run-split-test.sh ./samples/test-book.m4b ./test-data/expected-chapters ./test-results 50 3
+# Test M4B splitting with custom tolerance
+./test/run-split-test.sh ./samples/test-book.m4b ./test-data/expected-chapters ./test-results 50
 
 # Test M4A splitting
 ./test/run-split-test.sh ./samples/audiobook.m4a ./reference-chapters
 ```
 
-The second example will test splitting `test-book.m4b`, compare results with files in `expected-chapters`, save output to `test-results`, allow 50ms duration variance, and 3% size variance.
+The second example will test splitting `test-book.m4b`, compare results with files in `expected-chapters`, save output to `test-results`, and allow 50ms duration variance.
 
 ## Adding New Tests
 

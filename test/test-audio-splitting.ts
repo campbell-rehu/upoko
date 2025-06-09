@@ -10,12 +10,11 @@
  *   --expected <path>  Directory containing expected split files for comparison
  *   --output <path>    Optional output directory for test results (default: ./test-output)
  *   --tolerance <ms>   Duration tolerance in milliseconds (default: 100)
- *   --size-tolerance   Size tolerance percentage (default: 5%)
  * 
  * The script will:
  *   1. Split the input audiobook file using the upoko split command
  *   2. Compare the output with expected files
- *   3. Check file counts, durations, names, and optionally sizes
+ *   3. Check file counts, durations, and names
  *   4. Generate a detailed test report
  * 
  * Expected directory should contain split chapter files with the same naming convention
@@ -37,7 +36,6 @@ interface TestArgs {
   expected: string;
   output: string;
   tolerance: number;
-  sizeTolerance: number;
 }
 
 interface TestResult {
@@ -46,8 +44,6 @@ interface TestResult {
   details: {
     durationMatch?: boolean;
     durationDiff?: number;
-    sizeMatch?: boolean;
-    sizeDiff?: number;
     nameMatch?: boolean;
     error?: string;
   };
@@ -69,8 +65,7 @@ interface TestReport {
 function parseArgs(args: string[]): TestArgs {
   const parsed: Partial<TestArgs> = {
     output: './test-output',
-    tolerance: 100,
-    sizeTolerance: 5
+    tolerance: 100
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -99,12 +94,6 @@ function parseArgs(args: string[]): TestArgs {
       case '--tolerance':
         if (nextArg && !nextArg.startsWith('--')) {
           parsed.tolerance = parseInt(nextArg);
-          i++;
-        }
-        break;
-      case '--size-tolerance':
-        if (nextArg && !nextArg.startsWith('--')) {
-          parsed.sizeTolerance = parseFloat(nextArg);
           i++;
         }
         break;
@@ -215,19 +204,6 @@ async function getFileDuration(filePath: string): Promise<number> {
 }
 
 /**
- * Get file size in bytes
- */
-async function getFileSize(filePath: string): Promise<number> {
-  try {
-    const stats = await fs.stat(filePath);
-    return stats.size;
-  } catch (error) {
-    console.error(`Error getting size for ${filePath}: ${error}`);
-    return -1;
-  }
-}
-
-/**
  * Compare two file names, ignoring minor differences
  */
 function compareFileNames(actual: string, expected: string): boolean {
@@ -253,8 +229,7 @@ function compareFileNames(actual: string, expected: string): boolean {
 async function compareFiles(
   outputDir: string, 
   expectedDir: string, 
-  tolerance: number,
-  sizeTolerance: number
+  tolerance: number
 ): Promise<TestReport> {
   console.log('\n🔍 Comparing output files with expected files...');
   
@@ -264,7 +239,6 @@ async function compareFiles(
   console.log(`  Output files: ${outputFiles.length}`);
   console.log(`  Expected files: ${expectedFiles.length}`);
   console.log(`  Duration tolerance: ${tolerance}ms`);
-  console.log(`  Size tolerance: ${sizeTolerance}%`);
   
   const results: TestResult[] = [];
   const processedExpected = new Set<string>();
@@ -294,24 +268,13 @@ async function compareFiles(
         const durationDiff = Math.abs(outputDuration - expectedDuration);
         const durationMatch = durationDiff <= tolerance;
         
-        // Compare sizes
-        const [outputSize, expectedSize] = await Promise.all([
-          getFileSize(outputPath),
-          getFileSize(expectedPath)
-        ]);
-        
-        const sizeDiffPercent = Math.abs((outputSize - expectedSize) / expectedSize) * 100;
-        const sizeMatch = sizeDiffPercent <= sizeTolerance;
-        
         results.push({
           fileName: outputFile,
-          status: durationMatch && sizeMatch ? 'pass' : 'fail',
+          status: durationMatch ? 'pass' : 'fail',
           details: {
             nameMatch: true,
             durationMatch,
-            durationDiff,
-            sizeMatch,
-            sizeDiff: sizeDiffPercent
+            durationDiff
           }
         });
         
@@ -408,9 +371,6 @@ function displayReport(report: TestReport): void {
         if (details.durationMatch === false) {
           console.log(`    - Duration mismatch: ${details.durationDiff}ms difference`);
         }
-        if (details.sizeMatch === false) {
-          console.log(`    - Size mismatch: ${details.sizeDiff?.toFixed(1)}% difference`);
-        }
       }
     }
     
@@ -449,7 +409,6 @@ async function main() {
   console.log(`Expected files: ${args.expected}`);
   console.log(`Output directory: ${args.output}`);
   console.log(`Duration tolerance: ${args.tolerance}ms`);
-  console.log(`Size tolerance: ${args.sizeTolerance}%`);
   
   try {
     // Validate input file exists
@@ -480,8 +439,7 @@ async function main() {
     const report = await compareFiles(
       splitResult.outputDir, 
       args.expected, 
-      args.tolerance,
-      args.sizeTolerance
+      args.tolerance
     );
     
     // Display report

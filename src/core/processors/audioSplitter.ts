@@ -203,23 +203,28 @@ export async function processChapterSplit(
       process.stdout.write(`\r  [${chapterNumber.toString().padStart(2, '0')}/${config.chapters.length}] "${chapter.title}" (${durationStr})... ✅\n`);
       
       // Apply chapter-specific metadata including album artwork
-      if (config.format === 'mp3') {
-        const chapterMetadata = createChapterMetadata(
-          config,
-          chapter,
-          chapterNumber,
-          config.chapters.length,
-          config.metadata?.image
-        );
-        
-        try {
+      const chapterMetadata = createChapterMetadata(
+        config,
+        chapter,
+        chapterNumber,
+        config.chapters.length,
+        config.metadata?.image
+      );
+      
+      try {
+        if (config.format === 'mp3') {
           addTags(chapterMetadata, outputPath);
-          console.log(`✅`);
-        } catch (metadataError) {
-          console.log(`⚠️  (no metadata)`);
+        } else {
+          // For M4B, M4A, and other formats, use FFmpeg to add metadata
+          const tempOutputPath = outputPath + '.tmp';
+          await FFmpegService.addMetadataToFile(outputPath, tempOutputPath, chapterMetadata);
+          
+          // Replace original with metadata-enhanced version
+          await fs.rename(tempOutputPath, outputPath);
         }
-      } else {
-        console.log(`✅ (no metadata)`);
+        console.log(`✅`);
+      } catch (metadataError) {
+        console.log(`⚠️  (metadata failed: ${metadataError})`);
       }
     }
 

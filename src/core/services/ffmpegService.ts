@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { createRequire } from 'module';
+import os from 'os';
 import { AudioFormat, FFmpegProgress, ChapterInfo } from '../models/types.js';
 
 // Use createRequire to import CommonJS modules in ES module context
@@ -254,6 +255,97 @@ export class FFmpegService {
     } catch (error) {
       console.error(`Error extracting chapters from M4B: ${error instanceof Error ? error.message : error}`);
       return null;
+    }
+  }
+
+  /**
+   * Add metadata and artwork to M4B/M4A files using FFmpeg
+   */
+  static async addMetadataToFile(
+    inputPath: string, 
+    outputPath: string,
+    metadata: any
+  ): Promise<void> {
+    await this.validateAudioFile(inputPath);
+    
+    // Ensure output directory exists
+    await fs.mkdir(dirname(outputPath), { recursive: true });
+
+    let tempArtworkPath: string | null = null;
+
+    try {
+      return await new Promise(async (resolve, reject) => {
+        const args = [
+          '-i', inputPath,
+          '-c', 'copy', // Copy streams without re-encoding
+        ];
+
+        // Handle artwork if provided
+        if (metadata.image) {
+          try {
+            // Create temporary file for artwork
+            const tempDir = await fs.mkdtemp(join(os.tmpdir(), 'upoko-artwork-'));
+            tempArtworkPath = join(tempDir, 'artwork.jpg');
+            
+            // Write image buffer to temporary file
+            const imageBuffer = Buffer.isBuffer(metadata.image) 
+              ? metadata.image 
+              : Buffer.from(metadata.image.imageBuffer || metadata.image, 'base64');
+            
+            await fs.writeFile(tempArtworkPath, imageBuffer);
+            
+            // Add artwork to FFmpeg args
+            args.push('-i', tempArtworkPath);
+            args.push('-map', '0:0', '-map', '1:0');
+            args.push('-c:v', 'copy');
+            args.push('-disposition:v:0', 'attached_pic');
+          } catch (artworkError) {
+            console.warn('Failed to process artwork:', artworkError);
+            // Continue without artwork
+          }
+        }
+
+        // Add metadata tags
+        if (metadata.title) args.push('-metadata', `title=${metadata.title}`);
+        if (metadata.album) args.push('-metadata', `album=${metadata.album}`);
+        if (metadata.artist) args.push('-metadata', `artist=${metadata.artist}`);
+        if (metadata.albumArtist) args.push('-metadata', `album_artist=${metadata.albumArtist}`);
+        if (metadata.genre) args.push('-metadata', `genre=${metadata.genre}`);
+        if (metadata.year) args.push('-metadata', `date=${metadata.year}`);
+        if (metadata.trackNumber) args.push('-metadata', `track=${metadata.trackNumber}`);
+        if (metadata.comment?.text) args.push('-metadata', `comment=${metadata.comment.text}`);
+
+        args.push('-y', outputPath);
+
+        const ffmpeg = spawn(ffmpegStatic, args);
+        let stderr = '';
+
+        ffmpeg.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+        });
+
+        ffmpeg.on('close', (code: number | null) => {
+          if (code !== 0) {
+            reject(new Error(`FFmpeg metadata addition failed: ${stderr}`));
+            return;
+          }
+          resolve();
+        });
+
+        ffmpeg.on('error', (error: Error) => {
+          reject(new Error(`Failed to spawn ffmpeg for metadata: ${error.message}`));
+        });
+      });
+    } finally {
+      // Clean up temporary artwork file
+      if (tempArtworkPath) {
+        try {
+          await fs.unlink(tempArtworkPath);
+          await fs.rmdir(dirname(tempArtworkPath));
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
     }
   }
 
