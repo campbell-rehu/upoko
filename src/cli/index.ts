@@ -28,11 +28,13 @@ Commands:
 Options:
   --dry-run        Run without making actual changes
   --process-all    Process all files, including already processed ones
+  --split          Tag files and then split them into chapters
 
 Examples:
   upoko                    # Process audiobooks (add metadata)
   upoko process            # Same as above
-  upoko split              # Split audiobooks into chapters
+  upoko --split            # Tag AND split audiobooks into chapters
+  upoko split              # Split already-tagged audiobooks into chapters
   upoko split --dry-run    # Preview split operation
   upoko --process-all      # Reprocess all files
 `);
@@ -48,6 +50,7 @@ async function processCommand(args: string[]): Promise<void> {
   // Check for command line flags
   const processAll = args.includes("--process-all");
   const dryRunMode = args.includes("--dry-run");
+  const splitAfterTagging = args.includes("--split");
 
   // Create output directory
   try {
@@ -62,6 +65,10 @@ async function processCommand(args: string[]): Promise<void> {
 
   // Display application header
   displayAppHeader(inputDir, outputDir, logFilePath, processAll, dryRunMode);
+  
+  if (splitAfterTagging) {
+    console.log("📝 MODE: Tag + Split - Files will be tagged and then split into chapters");
+  }
 
   // Get all audio files in the directory
   const audioFiles = await getAudioFiles(inputDir);
@@ -101,6 +108,7 @@ async function processCommand(args: string[]): Promise<void> {
       copyFilePath,
       logFilePath,
       !processAll,
+      splitAfterTagging,
     );
   }
 

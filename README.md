@@ -47,6 +47,9 @@ npm run start -- --dry-run
 
 # Process all files without prompts
 npm run start -- --process-all
+
+# Tag files AND split them into chapters in one operation
+npm run start -- --split
 ```
 
 **Setup:**
@@ -84,6 +87,13 @@ npm run start split --help
 - `--overwrite`: Overwrite existing chapter files
 - `--no-playlist`: Skip playlist/index generation
 - `--asin`: Provide ASIN directly to fetch chapters
+
+**Process + Split Combined:**
+Use `--split` with the process command to tag and split in one operation:
+```bash
+npm run start -- --split           # Tag and split all files in input/
+npm run start -- --split --dry-run # Preview tag + split operation
+```
 
 ## Development
 
