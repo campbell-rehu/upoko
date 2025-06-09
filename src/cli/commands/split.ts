@@ -142,6 +142,19 @@ Examples:
 }
 
 /**
+ * Validate if a string is a proper ASIN format
+ * @param asin The string to validate
+ * @returns true if valid ASIN format
+ */
+function isValidAsin(asin: string): boolean {
+  // ASIN should be exactly 10 characters
+  // Starting with B (for books) or other valid prefixes
+  // Followed by 9 alphanumeric characters
+  const asinPattern = /^[B0-9][0-9A-Z]{9}$/;
+  return asinPattern.test(asin);
+}
+
+/**
  * Extract ASIN from audio file metadata
  * @param filePath Path to the audio file
  * @returns ASIN if found, null otherwise
@@ -157,14 +170,19 @@ async function extractAsinFromFile(filePath: string): Promise<string | null> {
       // Check various fields where ASIN might be stored
       if (tags.comment?.text) {
         const asinMatch = tags.comment.text.match(/\b([B0][A-Z0-9]{9})\b/);
-        if (asinMatch) return asinMatch[1];
+        if (asinMatch && isValidAsin(asinMatch[1])) {
+          return asinMatch[1];
+        }
       }
       
       // Check userDefinedText for ASIN
       if (tags.userDefinedText) {
         for (const frame of tags.userDefinedText) {
           if (frame.description?.toLowerCase().includes("asin") && frame.value) {
-            return frame.value;
+            const potentialAsin = frame.value.trim();
+            if (isValidAsin(potentialAsin)) {
+              return potentialAsin;
+            }
           }
         }
       }
@@ -226,21 +244,40 @@ async function getChaptersInfo(
       }
     }
 
-    // If we have an ASIN, fetch directly
+    // If we have an ASIN, verify with user before proceeding
     if (selectedAsin) {
       console.log("Fetching product details...");
-      const productDetail = await getProductByAsin(selectedAsin);
-      displayProductDetail(productDetail);
-      bookTitle = productDetail.product.title;
-      
-      console.log("Fetching chapter information...");
-      const chaptersData = await getChaptersByAsin(selectedAsin);
-      
-      return {
-        chapters: chaptersData.chapters,
-        bookTitle,
-        asin: selectedAsin,
-      };
+      try {
+        const productDetail = await getProductByAsin(selectedAsin);
+        displayProductDetail(productDetail);
+        bookTitle = productDetail.product.title;
+        
+        // Ask user to confirm this is the correct book
+        const confirmChoice = await question(
+          "\nIs this the correct audiobook? (y/n/s for search manually): "
+        );
+        
+        if (confirmChoice.toLowerCase() === 'y' || confirmChoice.toLowerCase() === 'yes') {
+          console.log("Fetching chapter information...");
+          const chaptersData = await getChaptersByAsin(selectedAsin);
+          
+          return {
+            chapters: chaptersData.chapters,
+            bookTitle,
+            asin: selectedAsin,
+          };
+        } else if (confirmChoice.toLowerCase() === 's' || confirmChoice.toLowerCase() === 'search') {
+          console.log("Starting manual search...");
+          selectedAsin = null; // Reset to trigger manual search
+        } else {
+          console.log("Operation cancelled.");
+          return null;
+        }
+      } catch (error) {
+        console.log(`Failed to fetch details for ASIN ${selectedAsin}: ${error}`);
+        console.log("Falling back to manual search...");
+        selectedAsin = null;
+      }
     }
 
     // No ASIN found, search by filename
