@@ -4,7 +4,7 @@ import {
   AudibleSearchResponse,
   AudnexBookResponse,
   ChaptersResponse,
-} from "./types.js";
+} from "../models/types.js";
 
 type AudibleUrlInput =
   | { asin: string; keywords?: never }
@@ -19,6 +19,7 @@ const getAudibleUrl = ({ asin, keywords }: AudibleUrlInput): string => {
   }
   return `${base}?response_groups=${responseGroups}&num_results=10&products_sort_by=Relevance&keywords=${keywords}`;
 };
+
 /**
  * Search for audiobooks on Audible with given keywords
  * @param keywords Search terms to find audiobooks
@@ -69,6 +70,7 @@ export async function getProductByAsin(
     throw error;
   }
 }
+
 /**
  * Fetch book information from the audnex API
  * @param asin The Audible ASIN (Amazon Standard Identification Number) of the book
@@ -99,6 +101,7 @@ export async function getBookInfo(asin: string): Promise<AudnexBookResponse> {
     throw error;
   }
 }
+
 /**
  * Get chapter information for a specific audiobook by ASIN
  * @param asin The Audible product ASIN
@@ -123,6 +126,7 @@ export async function getChaptersByAsin(
     throw error;
   }
 }
+
 /**
  * Fetches an image from a URL and returns it as a Uint8Array
  * @param imageUrl The URL of the image to fetch
