@@ -192,8 +192,15 @@ export async function processChapterSplit(
         inputPath,
         outputPath,
         chapter.startOffsetMs,
-        chapter.lengthMs
+        chapter.lengthMs,
+        (progress) => {
+          // Show progress as percentage
+          process.stdout.write(`\r  [${chapterNumber.toString().padStart(2, '0')}/${config.chapters.length}] "${chapter.title}" (${durationStr})... ${Math.round(progress)}%`);
+        }
       );
+      
+      // Clear the progress line and show completion
+      process.stdout.write(`\r  [${chapterNumber.toString().padStart(2, '0')}/${config.chapters.length}] "${chapter.title}" (${durationStr})... ✅\n`);
       
       // Apply chapter-specific metadata including album artwork
       if (config.format === 'mp3') {
