@@ -123,7 +123,7 @@ export async function processFile(
 
     displayProductDetail(productDetail);
 
-    console.log("Fetching chapters information...");
+    console.log("Fetching chapters and artwork...");
     const [chaptersData, image] = await Promise.all([
       getChaptersByAsin(selectedAsin!),
       getImageFromUrl(bookInfo.image),
@@ -136,7 +136,7 @@ export async function processFile(
     processAudioFile(dryRunMode, filePath, metadata);
 
     // Generate output filename and rename
-    console.log("\nRenaming file...");
+    console.log("📁 Saving tagged file...");
     const ext = path.extname(filePath).replace(".", "");
     const authors = mapAndJoinOnField()(productDetail.product.authors ?? []);
     const releaseYear = new Date(productDetail.product.release_date)

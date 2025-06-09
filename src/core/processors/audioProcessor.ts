@@ -13,7 +13,7 @@ export function addTags(tags: any, mp3file: any): void {
   if (!taggedBuffer) {
     throw new Error("Failed to write tags to the MP3 file");
   }
-  console.log("Tags added successfully");
+  // Removed verbose output for cleaner logs
 }
 
 /**
@@ -26,7 +26,7 @@ export function removeTags(mp3file: any): void {
   if (!removedBuffer) {
     throw new Error("Failed to remove tags from the MP3 file");
   }
-  console.log("Tags removed successfully");
+  // Removed verbose output for cleaner logs
 }
 
 /**
@@ -40,10 +40,7 @@ export function processAudioFile(
   filePath: string,
   metadata: any,
 ): void {
-  console.log("Removing any existing tags...");
   run(dryRunMode, removeTags, filePath);
-
-  console.log("Adding new tags...");
   run(dryRunMode, addTags, metadata, filePath);
 }
 

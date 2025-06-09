@@ -76,7 +76,7 @@ export async function splitAudioByChapters(
 
   try {
     // Pre-flight checks
-    console.log(`\nPreparing to split audio into ${config.chapters.length} chapters...`);
+    console.log(`\n📚 Splitting "${config.bookTitle}" into ${config.chapters.length} chapters...`);
     const prepResult = await prepareSplitOperation(config, options);
     if (!prepResult.success) {
       result.errors = prepResult.errors;
@@ -89,7 +89,6 @@ export async function splitAudioByChapters(
 
     // Calculate concurrency based on system resources
     const concurrency = calculateOptimalConcurrency();
-    console.log(`Processing with concurrency level: ${concurrency}`);
 
     // Process chapters in batches
     const chapterFiles: ChapterFile[] = [];
@@ -191,20 +190,18 @@ export async function processChapterSplit(
       }
     }
 
-    console.log(`  Processing chapter ${chapterNumber}: "${chapter.title}"`);
-    console.log(`    Start: ${formatTime(chapter.startOffsetMs)}, Duration: ${formatTime(chapter.lengthMs)}`);
+    // Show chapter info on one line
+    const durationStr = formatTime(chapter.lengthMs);
+    process.stdout.write(`  [${chapterNumber.toString().padStart(2, '0')}/${config.chapters.length}] "${chapter.title}" (${durationStr})... `);
 
-    // Create progress callback
+    // Create minimal progress callback
     const progressCallback = (progress: number) => {
-      if (progress % 10 === 0) { // Log every 10%
-        process.stdout.write(`\r    Progress: ${progress.toFixed(0)}%`);
-      }
+      // Only show spinner, no percentage spam
     };
 
     // Perform the actual split using FFmpeg service
     if (options?.dryRun) {
-      console.log(`    DRY RUN: Would create ${outputFileName}`);
-      console.log(`    DRY RUN: Would apply metadata with album artwork`);
+      console.log(`DRY RUN ✓`);
     } else {
       await FFmpegService.splitAudioByTime(
         inputPath,
@@ -213,11 +210,9 @@ export async function processChapterSplit(
         chapter.lengthMs,
         progressCallback
       );
-      process.stdout.write('\r    Progress: 100%\n');
       
       // Apply chapter-specific metadata including album artwork
       if (config.format === 'mp3') {
-        console.log(`    Adding metadata and artwork...`);
         const chapterMetadata = createChapterMetadata(
           config,
           chapter,
@@ -228,12 +223,12 @@ export async function processChapterSplit(
         
         try {
           addTags(chapterMetadata, outputPath);
-          console.log(`    ✅ Metadata applied to chapter ${chapterNumber}`);
+          console.log(`✓`);
         } catch (metadataError) {
-          console.warn(`    ⚠️ Warning: Could not apply metadata to chapter ${chapterNumber}: ${metadataError}`);
+          console.log(`⚠️`);
         }
       } else {
-        console.log(`    Note: Metadata application currently only supported for MP3 format`);
+        console.log(`✓ (no metadata)`);
       }
     }
 
@@ -281,8 +276,6 @@ export async function prepareSplitOperation(
 
     // Get audio info for validation
     const audioInfo = await FFmpegService.getAudioInfo(options.inputPath);
-    console.log(`  Audio file duration: ${formatTime(audioInfo.duration)}`);
-    console.log(`  Audio format: ${audioInfo.format}, Codec: ${audioInfo.codec || 'unknown'}`);
 
     // Validate chapters
     const validationResult = validateChapters(config.chapters, audioInfo.duration);
@@ -291,19 +284,18 @@ export async function prepareSplitOperation(
       return { success: false, errors };
     }
 
-    // Show warnings if any
-    if (validationResult.warnings.length > 0) {
-      console.log('\n⚠️  Chapter validation warnings:');
-      validationResult.warnings.forEach(warning => {
-        console.log(`  - ${warning}`);
-      });
+    // Show critical warnings only
+    const criticalWarnings = validationResult.warnings.filter(w => 
+      w.includes('very short') && w.includes('second')
+    );
+    if (criticalWarnings.length > 0) {
+      console.log(`⚠️  ${criticalWarnings.length} very short chapters detected`);
     }
 
     // Ensure output directory exists
     if (!options.dryRun) {
       try {
         await fs.mkdir(config.outputDir, { recursive: true });
-        console.log(`  Output directory ready: ${config.outputDir}`);
       } catch (error) {
         errors.push(`Failed to create output directory: ${error instanceof Error ? error.message : String(error)}`);
         return { success: false, errors };
