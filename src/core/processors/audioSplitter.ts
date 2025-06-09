@@ -87,40 +87,30 @@ export async function splitAudioByChapters(
     const sortedChapters = sortChaptersByStartTime(config.chapters);
     const normalizedChapters = normalizeChapterTitles(sortedChapters);
 
-    // Calculate concurrency based on system resources
-    const concurrency = calculateOptimalConcurrency();
-
-    // Process chapters in batches
+    // Process chapters sequentially for cleaner output
     const chapterFiles: ChapterFile[] = [];
     const errors: string[] = [];
 
-    for (let i = 0; i < normalizedChapters.length; i += concurrency) {
-      const batch = normalizedChapters.slice(i, i + concurrency);
-      const batchPromises = batch.map((chapter, batchIndex) => {
-        const chapterNumber = i + batchIndex + 1;
-        return processChapterSplit(
+    for (let i = 0; i < normalizedChapters.length; i++) {
+      const chapter = normalizedChapters[i];
+      const chapterNumber = i + 1;
+      
+      try {
+        const chapterFile = await processChapterSplit(
           options.inputPath,
           chapter,
           chapterNumber,
           config,
           options
         );
-      });
-
-      const batchResults = await Promise.allSettled(batchPromises);
-
-      batchResults.forEach((promiseResult, index) => {
-        const chapterNumber = i + index + 1;
-        if (promiseResult.status === 'fulfilled' && promiseResult.value) {
-          chapterFiles.push(promiseResult.value);
-          result.processedChapters++;
-          console.log(`✓ Chapter ${chapterNumber} processed successfully`);
-        } else if (promiseResult.status === 'rejected') {
-          const error = `Chapter ${chapterNumber}: ${promiseResult.reason}`;
-          errors.push(error);
-          console.error(`✗ ${error}`);
-        }
-      });
+        
+        chapterFiles.push(chapterFile);
+        result.processedChapters++;
+      } catch (error) {
+        const errorMessage = `Chapter ${chapterNumber}: ${error instanceof Error ? error.message : String(error)}`;
+        errors.push(errorMessage);
+        console.error(`\n❌ ${errorMessage}`);
+      }
     }
 
     // Update result
@@ -194,21 +184,15 @@ export async function processChapterSplit(
     const durationStr = formatTime(chapter.lengthMs);
     process.stdout.write(`  [${chapterNumber.toString().padStart(2, '0')}/${config.chapters.length}] "${chapter.title}" (${durationStr})... `);
 
-    // Create minimal progress callback
-    const progressCallback = (progress: number) => {
-      // Only show spinner, no percentage spam
-    };
-
     // Perform the actual split using FFmpeg service
     if (options?.dryRun) {
-      console.log(`DRY RUN ✓`);
+      console.log(`🔍 DRY RUN`);
     } else {
       await FFmpegService.splitAudioByTime(
         inputPath,
         outputPath,
         chapter.startOffsetMs,
-        chapter.lengthMs,
-        progressCallback
+        chapter.lengthMs
       );
       
       // Apply chapter-specific metadata including album artwork
@@ -223,12 +207,12 @@ export async function processChapterSplit(
         
         try {
           addTags(chapterMetadata, outputPath);
-          console.log(`✓`);
+          console.log(`✅`);
         } catch (metadataError) {
-          console.log(`⚠️`);
+          console.log(`⚠️  (no metadata)`);
         }
       } else {
-        console.log(`✓ (no metadata)`);
+        console.log(`✅ (no metadata)`);
       }
     }
 

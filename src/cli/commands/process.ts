@@ -79,11 +79,11 @@ export async function processFile(
   splitAfterTagging: boolean = false,
 ): Promise<void> {
   const filename = path.basename(filePath);
-  console.log(`\nProcessing file: ${filename}`);
+  console.log(`\n📖 "${filename}"`);
 
   // Initial check for already processed files
   if (skipProcessed && (await isFileProcessed(logFilePath, filename))) {
-    console.log(`Skipping file (already processed successfully): ${filename}`);
+    console.log(`   ⏭️ Already processed, skipping...`);
     return;
   }
 
@@ -94,7 +94,7 @@ export async function processFile(
   try {
     // Extract keywords from filename
     let keywords = filenameToKeywords(filename);
-    console.log(`\nInitial search keywords: "${keywords}"`);
+    console.log(`   🔍 Searching: "${keywords}"`);
 
     let manualSearch = false;
 
@@ -102,7 +102,7 @@ export async function processFile(
       // If manual search was requested, ask for new keywords
       if (manualSearch) {
         keywords = await promptForManualKeywords();
-        console.log(`Searching for: "${keywords}"`);
+        console.log(`   🔍 Searching: "${keywords}"`);
       }
 
       // First API call: Search for products
@@ -113,8 +113,6 @@ export async function processFile(
       manualSearch = selectedAsin === null;
     } while (manualSearch);
 
-    console.log(`Selected ASIN: ${selectedAsin}`);
-
     // Get product details and book information
     const [productDetail, bookInfo] = await Promise.all([
       getProductByAsin(selectedAsin!),
@@ -123,7 +121,7 @@ export async function processFile(
 
     displayProductDetail(productDetail);
 
-    console.log("Fetching chapters and artwork...");
+    console.log("   📥 Fetching chapters and artwork...");
     const [chaptersData, image] = await Promise.all([
       getChaptersByAsin(selectedAsin!),
       getImageFromUrl(bookInfo.image),
@@ -136,7 +134,7 @@ export async function processFile(
     processAudioFile(dryRunMode, filePath, metadata);
 
     // Generate output filename and rename
-    console.log("📁 Saving tagged file...");
+    console.log("   ✅ Tagging complete!");
     const ext = path.extname(filePath).replace(".", "");
     const authors = mapAndJoinOnField()(productDetail.product.authors ?? []);
     const releaseYear = new Date(productDetail.product.release_date)
@@ -153,8 +151,6 @@ export async function processFile(
     
     // If splitting is requested, split the tagged file into chapters
     if (splitAfterTagging && success) {
-      console.log("\n=== SPLITTING INTO CHAPTERS ===");
-      
       const taggedFilePath = dryRunMode ? filePath : outputPath;
       
       // Ask user for confirmation before splitting
@@ -198,8 +194,7 @@ export async function processFile(
           const splitResult = await splitAudioByChapters(splitConfig, splitOptions);
           
           if (splitResult.success) {
-            console.log(`\n✅ Successfully split into ${splitResult.processedChapters} chapters!`);
-            console.log(`Split files location: ${splitOutputDir}`);
+            console.log(`\nSplit files location: ${splitOutputDir}`);
           } else {
             console.error(`\n❌ Split operation failed:`);
             splitResult.errors.forEach(error => console.error(`  - ${error}`));
