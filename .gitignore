@@ -138,3 +138,4 @@ dist
 # ignore default input and output directories
 input
 output
+.claude/settings.local.json
