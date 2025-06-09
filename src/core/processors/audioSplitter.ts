@@ -214,17 +214,23 @@ export async function processChapterSplit(
       try {
         if (config.format === 'mp3') {
           addTags(chapterMetadata, outputPath);
+          console.log(`✅`);
         } else {
-          // For M4B, M4A, and other formats, use FFmpeg to add metadata
-          const tempOutputPath = outputPath + '.tmp';
-          await FFmpegService.addMetadataToFile(outputPath, tempOutputPath, chapterMetadata);
-          
-          // Replace original with metadata-enhanced version
-          await fs.rename(tempOutputPath, outputPath);
+          // For M4B, M4A, and other formats, try to use FFmpeg to add metadata
+          try {
+            const tempOutputPath = outputPath + '.tmp';
+            await FFmpegService.addMetadataToFile(outputPath, tempOutputPath, chapterMetadata);
+            
+            // Replace original with metadata-enhanced version
+            await fs.rename(tempOutputPath, outputPath);
+            console.log(`✅`);
+          } catch (ffmpegError) {
+            // FFmpeg metadata failed, but file is still successfully split
+            console.log(`✅ (no metadata)`);
+          }
         }
-        console.log(`✅`);
       } catch (metadataError) {
-        console.log(`⚠️  (metadata failed: ${metadataError})`);
+        console.log(`⚠️  (metadata failed)`);
       }
     }
 

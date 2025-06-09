@@ -276,6 +276,7 @@ export class FFmpegService {
     try {
       return await new Promise(async (resolve, reject) => {
         const args = [
+          '-v', 'quiet', // Suppress verbose output
           '-i', inputPath,
           '-c', 'copy', // Copy streams without re-encoding
         ];
@@ -315,18 +316,19 @@ export class FFmpegService {
         if (metadata.trackNumber) args.push('-metadata', `track=${metadata.trackNumber}`);
         if (metadata.comment?.text) args.push('-metadata', `comment=${metadata.comment.text}`);
 
+        // Determine output format from input file extension
+        const inputExt = inputPath.split('.').pop()?.toLowerCase();
+        if (inputExt === 'm4b' || inputExt === 'm4a') {
+          args.push('-f', 'mp4');
+        }
+
         args.push('-y', outputPath);
 
         const ffmpeg = spawn(ffmpegStatic, args);
-        let stderr = '';
-
-        ffmpeg.stderr.on('data', (data: Buffer) => {
-          stderr += data.toString();
-        });
 
         ffmpeg.on('close', (code: number | null) => {
           if (code !== 0) {
-            reject(new Error(`FFmpeg metadata addition failed: ${stderr}`));
+            reject(new Error(`FFmpeg metadata addition failed with code ${code}`));
             return;
           }
           resolve();
