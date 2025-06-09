@@ -95,6 +95,12 @@ npm run start -- --split           # Tag and split all files in input/
 npm run start -- --split --dry-run # Preview tag + split operation
 ```
 
+**Smart Chapter Detection:**
+The split functionality intelligently uses chapter metadata:
+1. **Embedded First**: Checks for chapter tags in the file (fastest)
+2. **API Fallback**: Fetches from Audible/Audnex if no embedded data
+3. **Auto-Tagging**: Offers to tag untagged files before splitting
+
 ## Development
 
 ### Project Structure

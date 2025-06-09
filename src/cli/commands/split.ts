@@ -34,6 +34,7 @@ import {
   promptForManualKeywords,
   parseUserSelection,
 } from "../ui/prompts.js";
+import { processFile } from "./process.js";
 
 /**
  * Parse command line arguments for split command
@@ -155,6 +156,75 @@ function isValidAsin(asin: string): boolean {
 }
 
 /**
+ * Extract chapter metadata from tagged audio file
+ * @param filePath Path to the tagged audio file
+ * @returns Chapter information and book details if found
+ */
+async function extractChaptersFromFile(filePath: string): Promise<{
+  chapters: ChapterInfo[];
+  bookTitle: string;
+  asin: string;
+} | null> {
+  try {
+    const ext = path.extname(filePath).toLowerCase();
+    
+    // For MP3 files, read ID3 tags
+    if (ext === ".mp3") {
+      const tags = NodeID3.read(filePath);
+      
+      // Check if we have chapter data
+      if (tags.chapter && Array.isArray(tags.chapter) && tags.chapter.length > 0) {
+        const chapters: ChapterInfo[] = tags.chapter.map((chapter: any, index: number) => ({
+          title: chapter.title || `Chapter ${index + 1}`,
+          lengthMs: chapter.endTimeMs - chapter.startTimeMs,
+          startOffsetMs: chapter.startTimeMs,
+        }));
+        
+        // Get book title and ASIN from tags
+        const bookTitle = tags.title || tags.album || "Unknown Book";
+        let asin = "";
+        
+        // Try to extract ASIN from various fields
+        if (tags.userDefinedText) {
+          for (const frame of tags.userDefinedText) {
+            if (frame.description?.toLowerCase().includes("asin") && frame.value) {
+              const potentialAsin = frame.value.trim();
+              if (isValidAsin(potentialAsin)) {
+                asin = potentialAsin;
+                break;
+              }
+            }
+          }
+        }
+        
+        // Also check comment field for ASIN
+        if (!asin && tags.comment?.text) {
+          const asinMatch = tags.comment.text.match(/\b([B0][A-Z0-9]{9})\b/);
+          if (asinMatch && isValidAsin(asinMatch[1])) {
+            asin = asinMatch[1];
+          }
+        }
+        
+        console.log(`✅ Found ${chapters.length} chapters in embedded metadata`);
+        return {
+          chapters,
+          bookTitle,
+          asin,
+        };
+      }
+    }
+    
+    // For other formats, we could add support later
+    // (M4A/M4B files might have chapter metadata in different format)
+    
+    return null;
+  } catch (error) {
+    console.log("Could not extract chapter metadata from file");
+    return null;
+  }
+}
+
+/**
  * Extract ASIN from audio file metadata
  * @param filePath Path to the audio file
  * @returns ASIN if found, null otherwise
@@ -224,16 +294,31 @@ function displayChapterList(chapters: ChapterInfo[], bookTitle: string): void {
  * Get chapters information for the audiobook
  * @param asin The ASIN of the audiobook
  * @param filePath Path to the audio file (for filename-based search)
+ * @param useEmbeddedFirst Whether to prioritize embedded chapter metadata
  * @returns Chapter information or null if not found
  */
 async function getChaptersInfo(
   asin: string | null,
-  filePath: string
+  filePath: string,
+  useEmbeddedFirst: boolean = true
 ): Promise<{ chapters: ChapterInfo[]; bookTitle: string; asin: string } | null> {
   let selectedAsin = asin;
   let bookTitle = "";
 
   try {
+    // First priority: Check for embedded chapter metadata
+    if (useEmbeddedFirst) {
+      console.log("Checking for embedded chapter metadata...");
+      const embeddedChapters = await extractChaptersFromFile(filePath);
+      
+      if (embeddedChapters) {
+        console.log(`📖 Using embedded chapter metadata (${embeddedChapters.chapters.length} chapters)`);
+        return embeddedChapters;
+      } else {
+        console.log("No embedded chapter metadata found, checking for ASIN...");
+      }
+    }
+
     if (!selectedAsin) {
       // Try to extract ASIN from file metadata
       console.log("Checking file metadata for ASIN...");
@@ -412,12 +497,59 @@ export async function split(args: string[]): Promise<void> {
     console.log("Mode: Dry run (no files will be created)");
   }
 
-  // Get chapter information
-  const chapterInfo = await getChaptersInfo(options.asin || null, inputPath);
+  // Get chapter information (prefer embedded metadata)
+  let chapterInfo = await getChaptersInfo(options.asin || null, inputPath, true);
   
+  // If no chapter information found, offer to tag the file first
   if (!chapterInfo) {
-    console.error("Could not fetch chapter information. Aborting.");
-    return;
+    console.log("\n❌ No chapter metadata found in file and no valid ASIN detected.");
+    
+    const autoTag = await question(
+      "Would you like to tag this file first to add chapter metadata? (y/n): "
+    );
+    
+    if (autoTag.toLowerCase() === 'y' || autoTag.toLowerCase() === 'yes') {
+      console.log("\n=== AUTO-TAGGING BEFORE SPLIT ===");
+      
+      // Create a temporary output path for tagging
+      const outputDir = "./output";
+      const filename = path.basename(inputPath);
+      const outputPath = path.join(outputDir, filename);
+      
+      try {
+        // Ensure output directory exists
+        await fs.mkdir(outputDir, { recursive: true });
+        
+        // Tag the file using the process function
+        await processFile(
+          options.dryRun,
+          inputPath,
+          inputPath, // Use original file as both source and target for tagging
+          path.join(outputDir, "processed_files.json"),
+          false, // don't skip processed
+          false  // don't split after tagging (we'll do it here)
+        );
+        
+        console.log("\n=== RETRYING CHAPTER EXTRACTION ===");
+        
+        // Try to get chapter info again from the now-tagged file
+        chapterInfo = await getChaptersInfo(null, inputPath, true);
+        
+        if (!chapterInfo) {
+          console.error("❌ Still no chapter metadata after tagging. Aborting split.");
+          return;
+        }
+        
+        console.log("✅ Successfully tagged file, proceeding with split...");
+        
+      } catch (tagError) {
+        console.error(`❌ Error during auto-tagging: ${tagError}`);
+        return;
+      }
+    } else {
+      console.log("Split operation cancelled.");
+      return;
+    }
   }
 
   const { chapters, bookTitle, asin } = chapterInfo;

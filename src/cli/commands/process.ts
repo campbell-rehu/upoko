@@ -174,7 +174,8 @@ export async function processFile(
           // Detect format from tagged file
           const format = ext as AudioFormat;
           
-          // Prepare split configuration
+          // For tag+split workflow, use the chapters we just embedded
+          // This avoids re-fetching from API and uses the exact same data
           const splitConfig: ChapterSplitConfig = {
             bookTitle: title,
             chapters: chaptersData.chapters,
