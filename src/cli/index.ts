@@ -88,12 +88,9 @@ async function processCommand(args: string[]): Promise<void> {
 
     if (log.processedFiles?.[file]?.success === true) {
       if (!processAll) {
-        console.log(`Skipping already processed file: ${file}`);
-        continue;
+        continue; // Skip silently, will be shown in processFile
       }
     }
-
-    displayProcessingStatus(file, i + 1, audioFiles.length);
 
     const filePath = path.join(inputDir, file);
     const copyFilePath = path.join(outputDir, file);
@@ -112,8 +109,7 @@ async function processCommand(args: string[]): Promise<void> {
     );
   }
 
-  console.log("\nAll files processed successfully!");
-  console.log(`Log file saved at: ${logFilePath}`);
+  console.log("\n🎉 Processing complete!");
 }
 
 /**

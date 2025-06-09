@@ -8,7 +8,7 @@ import {
  * @param searchResults The API response to display
  */
 export function displaySearchResults(searchResults: AudibleSearchResponse): void {
-  console.log(`\nFound ${searchResults.total_results} results.`);
+  console.log(`\n   📚 Found ${searchResults.total_results} results:`);
   console.log("----------------------------------------");
 
   if (!searchResults.products || searchResults.products.length === 0) {
@@ -35,15 +35,11 @@ export function displayProductDetail(
   productDetail: AudibleProductDetailResponse,
 ): void {
   const product = productDetail.product;
-  console.log("\n=== PRODUCT DETAILS ===");
-  console.log(`Title: ${product.title}`);
-
   const authorNames = product.authors
     ? product.authors.map((author) => author.name).join(", ")
     : "Unknown";
-  console.log(`Author(s): ${authorNames}`);
-  console.log(`ASIN: ${product.asin}`);
-  console.log("======================\n");
+  
+  console.log(`   ✅ Selected: "${product.title}" by ${authorNames}`);
 }
 
 /**
@@ -75,18 +71,13 @@ export function displayAppHeader(
   processAll: boolean,
   dryRunMode: boolean,
 ): void {
-  console.log(`Input directory: ${inputDir}`);
-  console.log(`Output directory: ${outputDir}`);
-  console.log(`Log file: ${logFilePath}\n`);
-
-  if (processAll) {
-    console.log(`Mode: Process all files (including previously processed)`);
-  } else {
-    console.log(`Mode: Skip previously processed files`);
-  }
-
-  if (dryRunMode) {
-    console.log(`Mode: Dry run (no files will be modified)`);
+  console.log(`📁 Input: ${inputDir} → Output: ${outputDir}`);
+  
+  const modes = [];
+  if (processAll) modes.push("Reprocess all");
+  if (dryRunMode) modes.push("Dry run");
+  if (modes.length > 0) {
+    console.log(`⚙️  Mode: ${modes.join(", ")}`);
   }
 }
 
