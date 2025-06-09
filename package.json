@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "tsc && node dist/index.js"
+    "start": "tsc && node dist/index.js",
+    "test:split": "npm run build && node dist/test/test-m4b-splitting.js",
+    "test:validate": "npm run build && node dist/test/validate-test-setup.js"
   },
   "dependencies": {
     "@types/node": "^22.15.2",

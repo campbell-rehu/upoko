@@ -1,0 +1,24 @@
+{
+  "m4b-splitting": {
+    "description": "Test M4B chapter splitting functionality",
+    "input": "./test-data/sample-book.m4b",
+    "expected": "./test-data/expected-chapters",
+    "output": "./test-output",
+    "tolerance": 100,
+    "sizeTolerance": 5
+  },
+  "multiple-books": [
+    {
+      "name": "Fiction Book Test",
+      "input": "./test-data/fiction-book.m4b",
+      "expected": "./test-data/fiction-expected",
+      "tolerance": 50
+    },
+    {
+      "name": "Non-Fiction Book Test", 
+      "input": "./test-data/nonfiction-book.m4b",
+      "expected": "./test-data/nonfiction-expected",
+      "tolerance": 100
+    }
+  ]
+}
