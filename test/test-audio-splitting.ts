@@ -1,25 +1,25 @@
 /**
- * Test script for validating M4B chapter splitting functionality
+ * Test script for validating audiobook chapter splitting functionality
  * 
  * Usage:
  *   npm run build
- *   node dist/test/test-m4b-splitting.js --input path/to/test.m4b --expected path/to/expected/files [--output path/to/output] [--tolerance 100]
+ *   node dist/test/test-audio-splitting.js --input path/to/test.{mp3,m4b,m4a} --expected path/to/expected/files [--output path/to/output] [--tolerance 100]
  * 
  * Arguments:
- *   --input <path>     Path to the M4B file to test
+ *   --input <path>     Path to the audiobook file to test (MP3, M4B, M4A, etc.)
  *   --expected <path>  Directory containing expected split files for comparison
  *   --output <path>    Optional output directory for test results (default: ./test-output)
  *   --tolerance <ms>   Duration tolerance in milliseconds (default: 100)
  *   --size-tolerance   Size tolerance percentage (default: 5%)
  * 
  * The script will:
- *   1. Split the input M4B file using the upoko split command
+ *   1. Split the input audiobook file using the upoko split command
  *   2. Compare the output with expected files
  *   3. Check file counts, durations, names, and optionally sizes
  *   4. Generate a detailed test report
  * 
  * Expected directory should contain split chapter files with the same naming convention
- * that upoko uses: "BookTitle - 001 - Chapter Title.m4b"
+ * that upoko uses: "01 Chapter Title.{ext}"
  */
 
 import { promises as fs } from 'fs';
@@ -443,7 +443,7 @@ async function saveReport(report: TestReport, outputDir: string): Promise<void> 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   
-  console.log('M4B Chapter Splitting Test');
+  console.log('Audiobook Chapter Splitting Test');
   console.log('=========================');
   console.log(`Input file: ${args.input}`);
   console.log(`Expected files: ${args.expected}`);

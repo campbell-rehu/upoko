@@ -4,9 +4,9 @@ This directory contains test scripts for validating the functionality of the Upo
 
 ## Quick Start
 
-1. **Run M4B Split Test**: Test M4B chapter splitting functionality using the shell wrapper:
+1. **Run Audiobook Split Test**: Test chapter splitting functionality for any supported format using the shell wrapper:
    ```bash
-   ./test/run-split-test.sh path/to/test.m4b path/to/expected/files
+   ./test/run-split-test.sh path/to/test.{mp3,m4b,m4a} path/to/expected/files
    ```
 
 That's it! The shell wrapper handles building, environment validation, and running the test for you.
@@ -15,20 +15,20 @@ That's it! The shell wrapper handles building, environment validation, and runni
 
 The `validate-test-setup.ts` script checks if your environment is properly configured for testing.
 
-## M4B Splitting Test
+## Audiobook Splitting Test
 
-The `test-m4b-splitting.ts` script validates the chapter splitting functionality by comparing output files with expected results.
+The `test-audio-splitting.ts` script validates the chapter splitting functionality by comparing output files with expected results for any supported audio format (MP3, M4B, M4A, etc.).
 
 ### Usage
 
 Run the test using the convenient shell wrapper:
 ```bash
-./test/run-split-test.sh <input-m4b-file> <expected-files-directory> [output-directory] [tolerance-ms] [size-tolerance-percent]
+./test/run-split-test.sh <input-audio-file> <expected-files-directory> [output-directory] [tolerance-ms] [size-tolerance-percent]
 ```
 
 ### Arguments
 
-- `<input-m4b-file>`: Path to the M4B file to test (required)
+- `<input-audio-file>`: Path to the audiobook file to test - supports MP3, M4B, M4A, etc. (required)
 - `<expected-files-directory>`: Directory containing expected split files for comparison (required)
 - `[output-directory]`: Output directory for test results (optional, default: `./test-output`)
 - `[tolerance-ms]`: Duration tolerance in milliseconds (optional, default: 100)
@@ -51,9 +51,9 @@ The expected directory should contain properly named chapter files that match th
 
 ```
 expected-files/
-├── BookTitle - 001 - Chapter 1.m4b
-├── BookTitle - 002 - Chapter 2.m4b
-├── BookTitle - 003 - Chapter 3.m4b
+├── 01 Chapter 1.mp3
+├── 02 Chapter 2.mp3
+├── 03 Chapter 3.mp3
 └── ...
 ```
 
@@ -73,11 +73,14 @@ The script will output:
 ### Examples
 
 ```bash
-# Basic test with default settings
-./test/run-split-test.sh ./samples/test-book.m4b ./test-data/expected-chapters
+# Test MP3 splitting with default settings
+./test/run-split-test.sh ./samples/test-book.mp3 ./test-data/expected-chapters
 
-# Test with custom output directory and tolerances
+# Test M4B splitting with custom tolerances
 ./test/run-split-test.sh ./samples/test-book.m4b ./test-data/expected-chapters ./test-results 50 3
+
+# Test M4A splitting
+./test/run-split-test.sh ./samples/audiobook.m4a ./reference-chapters
 ```
 
 The second example will test splitting `test-book.m4b`, compare results with files in `expected-chapters`, save output to `test-results`, allow 50ms duration variance, and 3% size variance.
