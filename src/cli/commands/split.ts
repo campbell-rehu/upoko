@@ -7,6 +7,7 @@ import {
   searchAudibleBooks,
   getProductByAsin,
   getBookInfo,
+  getImageFromUrl,
 } from "../../core/services/audibleService.js";
 import {
   createOutputDirectory,
@@ -301,7 +302,7 @@ async function getChaptersInfo(
   asin: string | null,
   filePath: string,
   useEmbeddedFirst: boolean = true
-): Promise<{ chapters: ChapterInfo[]; bookTitle: string; asin: string } | null> {
+): Promise<{ chapters: ChapterInfo[]; bookTitle: string; asin: string; metadata?: any } | null> {
   let selectedAsin = asin;
   let bookTitle = "";
 
@@ -343,13 +344,34 @@ async function getChaptersInfo(
         );
         
         if (confirmChoice.toLowerCase() === 'y' || confirmChoice.toLowerCase() === 'yes') {
-          console.log("Fetching chapter information...");
-          const chaptersData = await getChaptersByAsin(selectedAsin);
+          console.log("Fetching chapter information and artwork...");
+          const [chaptersData, bookInfo] = await Promise.all([
+            getChaptersByAsin(selectedAsin),
+            getBookInfo(selectedAsin),
+          ]);
+          
+          // Fetch album artwork
+          let image = null;
+          try {
+            image = await getImageFromUrl(bookInfo.image);
+          } catch (imageError) {
+            console.warn("Warning: Could not fetch album artwork");
+          }
+          
+          // Build basic metadata structure
+          const metadata = {
+            artist: productDetail.product.authors?.map(a => a.name).join(', ') || 'Unknown Artist',
+            albumArtist: productDetail.product.authors?.map(a => a.name).join(', ') || 'Unknown Artist',
+            genre: 'Audiobook',
+            year: new Date(productDetail.product.release_date).getFullYear().toString(),
+            image: image,
+          };
           
           return {
             chapters: chaptersData.chapters,
             bookTitle,
             asin: selectedAsin,
+            metadata,
           };
         } else if (confirmChoice.toLowerCase() === 's' || confirmChoice.toLowerCase() === 'search') {
           console.log("Starting manual search...");
@@ -400,10 +422,33 @@ async function getChaptersInfo(
     displayProductDetail(productDetail);
     bookTitle = productDetail.product.title;
     
+    // For manual search results, also fetch artwork and build metadata
+    const [bookInfo] = await Promise.all([
+      getBookInfo(selectedAsin),
+    ]);
+    
+    // Fetch album artwork
+    let image = null;
+    try {
+      image = await getImageFromUrl(bookInfo.image);
+    } catch (imageError) {
+      console.warn("Warning: Could not fetch album artwork");
+    }
+    
+    // Build basic metadata structure
+    const metadata = {
+      artist: productDetail.product.authors?.map(a => a.name).join(', ') || 'Unknown Artist',
+      albumArtist: productDetail.product.authors?.map(a => a.name).join(', ') || 'Unknown Artist',
+      genre: 'Audiobook',
+      year: new Date(productDetail.product.release_date).getFullYear().toString(),
+      image: image,
+    };
+    
     return {
       chapters: chaptersData.chapters,
       bookTitle,
       asin: selectedAsin,
+      metadata,
     };
     
   } catch (error) {
@@ -552,7 +597,7 @@ export async function split(args: string[]): Promise<void> {
     }
   }
 
-  const { chapters, bookTitle, asin } = chapterInfo;
+  const { chapters, bookTitle, asin, metadata } = chapterInfo;
   
   // Display chapter list
   displayChapterList(chapters, bookTitle);
@@ -595,6 +640,7 @@ export async function split(args: string[]): Promise<void> {
   const splitConfig: ChapterSplitConfig = {
     bookTitle,
     chapters,
+    metadata,
     outputDir: bookOutputDir,
     format,
   };

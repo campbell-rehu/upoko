@@ -179,6 +179,7 @@ export async function processFile(
           const splitConfig: ChapterSplitConfig = {
             bookTitle: title,
             chapters: chaptersData.chapters,
+            metadata: metadata, // Include the full metadata with image
             outputDir: splitOutputDir,
             format,
           };

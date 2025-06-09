@@ -16,6 +16,45 @@ import {
   sortChaptersByStartTime
 } from './chapterValidator.js';
 import { run } from '../../util.js';
+import { addTags } from './audioProcessor.js';
+
+/**
+ * Create chapter-specific metadata for individual split files
+ * @param config Split configuration containing book metadata
+ * @param chapter Chapter information
+ * @param chapterNumber Chapter number (1-based)
+ * @param totalChapters Total number of chapters
+ * @param image Album artwork image data
+ * @returns Metadata object for the chapter file
+ */
+function createChapterMetadata(
+  config: ChapterSplitConfig,
+  chapter: ChapterInfo,
+  chapterNumber: number,
+  totalChapters: number,
+  image?: any
+): any {
+  const metadata: any = {
+    title: chapter.title,
+    album: config.bookTitle,
+    artist: config.metadata?.artist || 'Unknown Artist',
+    albumArtist: config.metadata?.albumArtist || config.metadata?.artist || 'Unknown Artist',
+    genre: config.metadata?.genre || 'Audiobook',
+    year: config.metadata?.year || new Date().getFullYear().toString(),
+    trackNumber: `${chapterNumber}/${totalChapters}`,
+    comment: {
+      language: 'eng',
+      text: `Chapter ${chapterNumber} of ${config.bookTitle}`
+    }
+  };
+
+  // Add album artwork if available
+  if (image) {
+    metadata.image = image;
+  }
+
+  return metadata;
+}
 
 /**
  * Main function to split an audio file into chapters
@@ -165,6 +204,7 @@ export async function processChapterSplit(
     // Perform the actual split using FFmpeg service
     if (options?.dryRun) {
       console.log(`    DRY RUN: Would create ${outputFileName}`);
+      console.log(`    DRY RUN: Would apply metadata with album artwork`);
     } else {
       await FFmpegService.splitAudioByTime(
         inputPath,
@@ -174,6 +214,27 @@ export async function processChapterSplit(
         progressCallback
       );
       process.stdout.write('\r    Progress: 100%\n');
+      
+      // Apply chapter-specific metadata including album artwork
+      if (config.format === 'mp3') {
+        console.log(`    Adding metadata and artwork...`);
+        const chapterMetadata = createChapterMetadata(
+          config,
+          chapter,
+          chapterNumber,
+          config.chapters.length,
+          config.metadata?.image
+        );
+        
+        try {
+          addTags(chapterMetadata, outputPath);
+          console.log(`    ✅ Metadata applied to chapter ${chapterNumber}`);
+        } catch (metadataError) {
+          console.warn(`    ⚠️ Warning: Could not apply metadata to chapter ${chapterNumber}: ${metadataError}`);
+        }
+      } else {
+        console.log(`    Note: Metadata application currently only supported for MP3 format`);
+      }
     }
 
     return {
