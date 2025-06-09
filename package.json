@@ -9,6 +9,8 @@
   "dependencies": {
     "@types/node": "^22.15.2",
     "axios": "^1.9.0",
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
     "node-id3": "^0.2.9",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"

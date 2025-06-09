@@ -14,8 +14,14 @@ import {
   markFileProcessed,
   copyFile,
   renameFile,
+  createOutputDirectory,
 } from "../../core/services/fileService.js";
-import { AudibleSearchResponse } from "../../core/models/types.js";
+import { 
+  AudibleSearchResponse, 
+  ChapterSplitConfig, 
+  SplitOptions, 
+  AudioFormat 
+} from "../../core/models/types.js";
 import { displaySearchResults, displayProductDetail } from "../ui/display.js";
 import {
   question,
@@ -24,6 +30,7 @@ import {
   parseUserSelection,
 } from "../ui/prompts.js";
 import { mapAndJoinOnField } from "../../util.js";
+import { splitAudioByChapters } from "../../core/processors/audioSplitter.js";
 
 /**
  * Display search results and prompt for selection or manual keyword input
@@ -61,6 +68,7 @@ async function handleSearchResults(
  * @param filePath The path of the file to process
  * @param logFilePath Path to the log file
  * @param skipProcessed Whether to skip already processed files
+ * @param splitAfterTagging Whether to split the file into chapters after tagging
  */
 export async function processFile(
   dryRunMode: boolean,
@@ -68,6 +76,7 @@ export async function processFile(
   filePath: string,
   logFilePath: string,
   skipProcessed: boolean = false,
+  splitAfterTagging: boolean = false,
 ): Promise<void> {
   const filename = path.basename(filePath);
   console.log(`\nProcessing file: ${filename}`);
@@ -114,7 +123,7 @@ export async function processFile(
 
     displayProductDetail(productDetail);
 
-    console.log("Fetching chapters information...");
+    console.log("Fetching chapters and artwork...");
     const [chaptersData, image] = await Promise.all([
       getChaptersByAsin(selectedAsin!),
       getImageFromUrl(bookInfo.image),
@@ -127,7 +136,7 @@ export async function processFile(
     processAudioFile(dryRunMode, filePath, metadata);
 
     // Generate output filename and rename
-    console.log("\nRenaming file...");
+    console.log("📁 Saving tagged file...");
     const ext = path.extname(filePath).replace(".", "");
     const authors = mapAndJoinOnField()(productDetail.product.authors ?? []);
     const releaseYear = new Date(productDetail.product.release_date)
@@ -141,6 +150,67 @@ export async function processFile(
     run(dryRunMode, renameFile, filePath, outputPath);
 
     success = true;
+    
+    // If splitting is requested, split the tagged file into chapters
+    if (splitAfterTagging && success) {
+      console.log("\n=== SPLITTING INTO CHAPTERS ===");
+      
+      const taggedFilePath = dryRunMode ? filePath : outputPath;
+      
+      // Ask user for confirmation before splitting
+      const splitConfirm = await question(
+        `\nSplit "${title}" into ${chaptersData.chapters.length} chapter files? (y/n): `
+      );
+      
+      if (splitConfirm.toLowerCase() === 'y' || splitConfirm.toLowerCase() === 'yes') {
+        try {
+          // Create split output directory
+          const splitOutputDir = await createOutputDirectory(
+            "./output/split",
+            title,
+            dryRunMode
+          );
+          
+          // Detect format from tagged file
+          const format = ext as AudioFormat;
+          
+          // For tag+split workflow, use the chapters we just embedded
+          // This avoids re-fetching from API and uses the exact same data
+          const splitConfig: ChapterSplitConfig = {
+            bookTitle: title,
+            chapters: chaptersData.chapters,
+            metadata: metadata, // Include the full metadata with image
+            outputDir: splitOutputDir,
+            format,
+          };
+          
+          const splitOptions: SplitOptions = {
+            inputPath: taggedFilePath,
+            outputDir: splitOutputDir,
+            dryRun: dryRunMode,
+            overwrite: false,
+            format,
+          };
+          
+          console.log(`\nSplitting "${title}" into chapters...`);
+          console.log(`Output directory: ${splitOutputDir}`);
+          
+          const splitResult = await splitAudioByChapters(splitConfig, splitOptions);
+          
+          if (splitResult.success) {
+            console.log(`\n✅ Successfully split into ${splitResult.processedChapters} chapters!`);
+            console.log(`Split files location: ${splitOutputDir}`);
+          } else {
+            console.error(`\n❌ Split operation failed:`);
+            splitResult.errors.forEach(error => console.error(`  - ${error}`));
+          }
+        } catch (splitError) {
+          console.error(`\n❌ Error during splitting: ${splitError}`);
+        }
+      } else {
+        console.log("Skipping split operation.");
+      }
+    }
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "User chose to skip this file") {
