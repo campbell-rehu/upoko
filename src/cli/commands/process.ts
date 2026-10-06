@@ -1,4 +1,5 @@
 import path from "path";
+import fs from "fs/promises";
 import { run } from "../../util.js";
 import { filenameToKeywords, processAudioFile } from "../../core/processors/audioProcessor.js";
 import { buildAudioMetadata, generateOutputFilename } from "../../core/processors/metadataBuilder.js";
@@ -15,6 +16,8 @@ import {
   copyFile,
   renameFile,
   createOutputDirectory,
+  getAudioFiles,
+  readProcessedLog,
 } from "../../core/services/fileService.js";
 import { 
   AudibleSearchResponse, 
@@ -226,5 +229,106 @@ export async function processFile(
       title,
       success,
     );
+  }
+}
+
+/**
+ * Tag every audio file in a folder as a track from the same audiobook.
+ */
+export async function processFolder(
+  dryRunMode: boolean,
+  folderPath: string,
+  logFilePath: string,
+  skipProcessed: boolean = false,
+): Promise<void> {
+  const files = (await getAudioFiles(folderPath)).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
+  );
+  if (files.length === 0) {
+    throw new Error(`No audio files found in folder: ${folderPath}`);
+  }
+
+  const folderName = path.basename(path.resolve(folderPath));
+  let keywords = filenameToKeywords(folderName);
+  let selectedAsin: string | null = null;
+  let manualSearch = false;
+
+  console.log(`\n📁 Audiobook folder: "${folderName}" (${files.length} files)`);
+  do {
+    if (manualSearch) {
+      keywords = await promptForManualKeywords();
+    }
+    console.log(`   🔍 Searching: "${keywords}"`);
+    const searchResults = await searchAudibleBooks(keywords);
+    selectedAsin = await handleSearchResults(searchResults);
+    manualSearch = selectedAsin === null;
+  } while (manualSearch);
+
+  const [productDetail, bookInfo] = await Promise.all([
+    getProductByAsin(selectedAsin!),
+    getBookInfo(selectedAsin!),
+  ]);
+  displayProductDetail(productDetail);
+
+  console.log("   📥 Fetching chapters and artwork...");
+  const [chaptersData, image] = await Promise.all([
+    getChaptersByAsin(selectedAsin!),
+    getImageFromUrl(bookInfo.image),
+  ]);
+  const bookMetadata = buildAudioMetadata(productDetail, bookInfo, chaptersData, image);
+  const outputDir = await createOutputDirectory(
+    "./output",
+    productDetail.product.title,
+    dryRunMode,
+  );
+  const log = await readProcessedLog(logFilePath);
+
+  for (let index = 0; index < files.length; index++) {
+    const filename = files[index];
+    const sourcePath = path.join(folderPath, filename);
+    const logKey = path.relative(process.cwd(), sourcePath);
+    console.log(`\n📖 [${index + 1}/${files.length}] "${filename}"`);
+
+    if (skipProcessed && log.processedFiles[logKey]?.success === true) {
+      console.log("   ⏭️ Already processed, skipping...");
+      continue;
+    }
+
+    const outputPath = path.join(outputDir, filename);
+    const metadata = files.length > 1
+      ? {
+          ...bookMetadata,
+          title: path.parse(filename).name,
+          trackNumber: `${index + 1}/${files.length}`,
+          chapter: [],
+          tableOfContents: {
+            ...bookMetadata.tableOfContents,
+            elements: [],
+          },
+        }
+      : bookMetadata;
+    let success = false;
+
+    try {
+      await run(dryRunMode, copyFile, sourcePath, outputPath);
+      processAudioFile(dryRunMode, outputPath, metadata);
+      success = true;
+      console.log("   ✅ Tagging complete!");
+    } catch (error) {
+      console.error(
+        `Error processing file ${filename}:`,
+        error instanceof Error ? error.message : error,
+      );
+    } finally {
+      await run(
+        dryRunMode,
+        markFileProcessed,
+        logFilePath,
+        logKey,
+        selectedAsin!,
+        productDetail.product.title,
+        success,
+      );
+    }
   }
 }

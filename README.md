@@ -39,6 +39,9 @@ Add chapter metadata to audiobook files:
 # Process all files in input directory
 npm run start
 
+# Treat every audio file in a folder as one audiobook
+npm run start process ./my-book
+
 # Explicit process command
 npm run start process
 
@@ -57,6 +60,12 @@ npm run start -- --split
 2. Place your audiobook files in the `input` directory
 3. Run the command above
 4. Processed files will be saved to the `output` directory
+
+When you pass a folder to `process`, Upoko searches for the audiobook once
+using the folder name and applies its book metadata to each audio file. Files
+are written under `output/<book title>/` with their original filenames and
+track numbers. For multi-file folders, file names are used as track titles and
+whole-book chapter timestamps are not applied to individual tracks.
 
 ### Split Command (Split into Chapters)
 

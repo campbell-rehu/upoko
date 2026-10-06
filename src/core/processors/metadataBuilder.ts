@@ -21,6 +21,7 @@ export interface AudioMetadata {
   originalYear: string;
   genre: string;
   composer: string;
+  trackNumber?: string;
   image: {
     imageBuffer: Uint8Array;
     mime: string;

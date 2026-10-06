@@ -1,3 +1,4 @@
+import fs from "fs/promises";
 import path from "path";
 import { run } from "../util.js";
 import {
@@ -6,7 +7,7 @@ import {
   readProcessedLog,
   copyFile,
 } from "../core/services/fileService.js";
-import { processFile } from "./commands/process.js";
+import { processFile, processFolder } from "./commands/process.js";
 import { split } from "./commands/split.js";
 import { displayAppHeader, displayFileStats, displayProcessingStatus } from "./ui/display.js";
 import { closePrompts } from "./ui/prompts.js";
@@ -29,6 +30,7 @@ Options:
   --dry-run        Run without making actual changes
   --process-all    Process all files, including already processed ones
   --split          Tag files and then split them into chapters
+  <folder>         Tag all audio files in a folder as one audiobook
 
 Examples:
   upoko                    # Process audiobooks (add metadata)
@@ -37,6 +39,7 @@ Examples:
   upoko split              # Split already-tagged audiobooks into chapters
   upoko split --dry-run    # Preview split operation
   upoko --process-all      # Reprocess all files
+  upoko process ./my-book  # Tag every audio file in the folder as one audiobook
 `);
 }
 
@@ -44,7 +47,8 @@ Examples:
  * Process command handler - adds metadata tags to audiobook files
  */
 async function processCommand(args: string[]): Promise<void> {
-  const inputDir = "./input";
+  const inputPath = args.find((arg) => !arg.startsWith("-"));
+  const inputDir = inputPath ?? "./input";
   const outputDir = "./output";
 
   // Check for command line flags
@@ -68,6 +72,41 @@ async function processCommand(args: string[]): Promise<void> {
   
   if (splitAfterTagging) {
     console.log("📝 MODE: Tag + Split - Files will be tagged and then split into chapters");
+  }
+
+  if (inputPath) {
+    const inputStats = await fs.stat(inputDir);
+    if (inputStats.isDirectory()) {
+      if (splitAfterTagging) {
+        console.warn("Folder mode tags the existing tracks; --split is not applied.");
+      }
+      await processFolder(
+        dryRunMode,
+        inputDir,
+        logFilePath,
+        !processAll,
+      );
+      console.log("\n🎉 Processing complete!");
+      return;
+    }
+
+    if (inputStats.isFile()) {
+      const filename = path.basename(inputDir);
+      const copyFilePath = path.join(outputDir, filename);
+      run(dryRunMode, copyFile, inputDir, copyFilePath);
+      await processFile(
+        dryRunMode,
+        inputDir,
+        copyFilePath,
+        logFilePath,
+        !processAll,
+        splitAfterTagging,
+      );
+      console.log("\n🎉 Processing complete!");
+      return;
+    }
+
+    throw new Error(`Input path is neither a file nor a folder: ${inputDir}`);
   }
 
   // Get all audio files in the directory
