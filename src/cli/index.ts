@@ -109,6 +109,31 @@ async function processCommand(args: string[]): Promise<void> {
     throw new Error(`Input path is neither a file nor a folder: ${inputDir}`);
   }
 
+  const inputEntries = await fs.readdir(inputDir, { withFileTypes: true });
+  const audiobookFolders = inputEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+  let processedFolders = 0;
+  for (const folder of audiobookFolders) {
+    const folderPath = path.join(inputDir, folder);
+    if ((await getAudioFiles(folderPath)).length === 0) {
+      continue;
+    }
+
+    if (splitAfterTagging) {
+      console.warn(`Folder "${folder}" will be tagged as tracks; --split is not applied to folders.`);
+    }
+    await processFolder(
+      dryRunMode,
+      folderPath,
+      logFilePath,
+      !processAll,
+    );
+    processedFolders++;
+  }
+
   // Get all audio files in the directory
   const audioFiles = await getAudioFiles(inputDir);
 
@@ -148,6 +173,9 @@ async function processCommand(args: string[]): Promise<void> {
     );
   }
 
+  console.log(
+    `\nProcessed ${processedFolders} audiobook folder${processedFolders === 1 ? "" : "s"} and ${audioFiles.length} loose audio file${audioFiles.length === 1 ? "" : "s"}.`,
+  );
   console.log("\n🎉 Processing complete!");
 }
 

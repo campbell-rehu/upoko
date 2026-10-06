@@ -57,15 +57,17 @@ npm run start -- --split
 
 **Setup:**
 1. Create an `input` directory in the project root
-2. Place your audiobook files in the `input` directory
+2. Place audiobook files in `input/`, or place each audiobook's files in its own subfolder (for example, `input/My Book/`)
 3. Run the command above
 4. Processed files will be saved to the `output` directory
 
-When you pass a folder to `process`, Upoko searches for the audiobook once
-using the folder name and applies its book metadata to each audio file. Files
-are written under `output/<book title>/` with their original filenames and
-track numbers. For multi-file folders, file names are used as track titles and
-whole-book chapter timestamps are not applied to individual tracks.
+When you pass a folder to `process`, or put a folder directly inside `input/`,
+Upoko searches for the audiobook once using the folder name and applies its
+book metadata to each audio file. Files are written under
+`output/<book title>/` with their original filenames and track numbers. For
+multi-file folders, file names are used as track titles and whole-book chapter
+timestamps are not applied to individual tracks. Loose audio files directly in
+`input/` continue to be processed individually.
 
 ### Split Command (Split into Chapters)
 
